@@ -74,10 +74,10 @@
       <WarningLevel>Level4</WarningLevel>
       <Optimization>Disabled</Optimization>
       <SDLCheck>true</SDLCheck>
-      <AdditionalIncludeDirectories>C:\Users\teguh\Source\Repos\vulkan-demo\vulkan-demo\utils;C:\Users\teguh\Source\Repos\vulkan-demo\vulkan-demo\utils\GLFW;C:\VulkanSDK\1.0.11.1\Include;C:\VulkanSDK\1.0.11.1\glslang;C:\VulkanSDK\1.0.11.1\spirv-tools\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)\utils;$(SolutionDir)\utils\GLFW;$(VULKAN_SDK)\Include;$(VULKAN_SDK)\glslang;$(VULKAN_SDK)\spirv-tools\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>C:\VulkanSDK\1.0.11.1\glslang\build\glslang\Debug\glslang.lib;C:\VulkanSDK\1.0.11.1\glslang\build\OGLCompilersDLL\Debug\OGLCompiler.lib;C:\VulkanSDK\1.0.11.1\glslang\build\glslang\OSDependent\Windows\Debug\OSDependent.lib;C:\VulkanSDK\1.0.11.1\glslang\build\hlsl\Debug\HLSL.lib;C:\VulkanSDK\1.0.11.1\glslang\build\SPIRV\Debug\SPIRV.lib;C:\VulkanSDK\1.0.11.1\Bin\vulkan-1.lib;C:\VulkanSDK\1.0.11.1\spirv-tools\build\source\Debug\SPIRV-Tools.lib;C:\Users\teguh\Documents\Programming\Useful\glfw-master\glfw-build\src\Release\glfw3.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(VULKAN_SDK)\glslang\build\glslang\Debug\glslang.lib;$(VULKAN_SDK)\glslang\build\OGLCompilersDLL\Debug\OGLCompiler.lib;$(VULKAN_SDK)\glslang\build\glslang\OSDependent\Windows\Debug\OSDependent.lib;$(VULKAN_SDK)\glslang\build\hlsl\Debug\HLSL.lib;$(VULKAN_SDK)\glslang\build\SPIRV\Debug\SPIRV.lib;$(VULKAN_SDK)\Bin\vulkan-1.lib;$(VULKAN_SDK)\spirv-tools\build\source\Debug\SPIRV-Tools.lib;$(SolutionDir)\lib\glfw3.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
@@ -85,10 +85,10 @@
       <WarningLevel>Level4</WarningLevel>
       <Optimization>Disabled</Optimization>
       <SDLCheck>true</SDLCheck>
-      <AdditionalIncludeDirectories>C:\Users\teguh\Source\Repos\vulkan-demo\vulkan-demo\utils;C:\Users\teguh\Source\Repos\vulkan-demo\vulkan-demo\utils\GLFW;C:\VulkanSDK\1.0.11.1\Include;C:\VulkanSDK\1.0.11.1\glslang;C:\VulkanSDK\1.0.11.1\spirv-tools\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)\utils;$(SolutionDir)\utils\GLFW;$(VULKAN_SDK)\Include;$(VULKAN_SDK)\glslang;$(VULKAN_SDK)\spirv-tools\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>C:\VulkanSDK\1.0.11.1\glslang\build\glslang\Debug\glslang.lib;C:\VulkanSDK\1.0.11.1\glslang\build\OGLCompilersDLL\Debug\OGLCompiler.lib;C:\VulkanSDK\1.0.11.1\glslang\build\glslang\OSDependent\Windows\Debug\OSDependent.lib;C:\VulkanSDK\1.0.11.1\glslang\build\hlsl\Debug\HLSL.lib;C:\VulkanSDK\1.0.11.1\glslang\build\SPIRV\Debug\SPIRV.lib;C:\VulkanSDK\1.0.11.1\Bin\vulkan-1.lib;C:\VulkanSDK\1.0.11.1\spirv-tools\build\source\Debug\SPIRV-Tools.lib;C:\Users\teguh\Documents\Programming\Useful\glfw-master\glfw-build\src\Release\glfw3.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(VULKAN_SDK)\glslang\build\glslang\Debug\glslang.lib;$(VULKAN_SDK)\glslang\build\OGLCompilersDLL\Debug\OGLCompiler.lib;$(VULKAN_SDK)\glslang\build\glslang\OSDependent\Windows\Debug\OSDependent.lib;$(VULKAN_SDK)\glslang\build\hlsl\Debug\HLSL.lib;$(VULKAN_SDK)\glslang\build\SPIRV\Debug\SPIRV.lib;$(VULKAN_SDK)\Bin\vulkan-1.lib;$(VULKAN_SDK)\spirv-tools\build\source\Debug\SPIRV-Tools.lib;$(SolutionDir)\lib\glfw3.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
@@ -98,12 +98,12 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <AdditionalIncludeDirectories>C:\Users\teguh\Source\Repos\vulkan-demo\vulkan-demo\utils;C:\Users\teguh\Source\Repos\vulkan-demo\vulkan-demo\utils\GLFW;C:\VulkanSDK\1.0.11.1\Include;C:\VulkanSDK\1.0.11.1\glslang;C:\VulkanSDK\1.0.11.1\spirv-tools\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)\utils;$(SolutionDir)\utils\GLFW;$(VULKAN_SDK)\Include;$(VULKAN_SDK)\glslang;$(VULKAN_SDK)\spirv-tools\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
-      <AdditionalDependencies>C:\VulkanSDK\1.0.11.1\glslang\build\glslang\Debug\glslang.lib;C:\VulkanSDK\1.0.11.1\glslang\build\OGLCompilersDLL\Debug\OGLCompiler.lib;C:\VulkanSDK\1.0.11.1\glslang\build\glslang\OSDependent\Windows\Debug\OSDependent.lib;C:\VulkanSDK\1.0.11.1\glslang\build\hlsl\Debug\HLSL.lib;C:\VulkanSDK\1.0.11.1\glslang\build\SPIRV\Debug\SPIRV.lib;C:\VulkanSDK\1.0.11.1\Bin\vulkan-1.lib;C:\VulkanSDK\1.0.11.1\spirv-tools\build\source\Debug\SPIRV-Tools.lib;C:\Users\teguh\Documents\Programming\Useful\glfw-master\glfw-build\src\Release\glfw3.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(VULKAN_SDK)\glslang\build\glslang\Debug\glslang.lib;$(VULKAN_SDK)\glslang\build\OGLCompilersDLL\Debug\OGLCompiler.lib;$(VULKAN_SDK)\glslang\build\glslang\OSDependent\Windows\Debug\OSDependent.lib;$(VULKAN_SDK)\glslang\build\hlsl\Debug\HLSL.lib;$(VULKAN_SDK)\glslang\build\SPIRV\Debug\SPIRV.lib;$(VULKAN_SDK)\Bin\vulkan-1.lib;$(VULKAN_SDK)\spirv-tools\build\source\Debug\SPIRV-Tools.lib;$(SolutionDir)\lib\glfw3.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -113,12 +113,12 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <AdditionalIncludeDirectories>C:\Users\teguh\Source\Repos\vulkan-demo\vulkan-demo\utils;C:\Users\teguh\Source\Repos\vulkan-demo\vulkan-demo\utils\GLFW;C:\VulkanSDK\1.0.11.1\Include;C:\VulkanSDK\1.0.11.1\glslang;C:\VulkanSDK\1.0.11.1\spirv-tools\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)\utils;$(SolutionDir)\utils\GLFW;$(VULKAN_SDK)\Include;$(VULKAN_SDK)\glslang;$(VULKAN_SDK)\spirv-tools\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
-      <AdditionalDependencies>C:\VulkanSDK\1.0.11.1\glslang\build\glslang\Debug\glslang.lib;C:\VulkanSDK\1.0.11.1\glslang\build\OGLCompilersDLL\Debug\OGLCompiler.lib;C:\VulkanSDK\1.0.11.1\glslang\build\glslang\OSDependent\Windows\Debug\OSDependent.lib;C:\VulkanSDK\1.0.11.1\glslang\build\hlsl\Debug\HLSL.lib;C:\VulkanSDK\1.0.11.1\glslang\build\SPIRV\Debug\SPIRV.lib;C:\VulkanSDK\1.0.11.1\Bin\vulkan-1.lib;C:\VulkanSDK\1.0.11.1\spirv-tools\build\source\Debug\SPIRV-Tools.lib;C:\Users\teguh\Documents\Programming\Useful\glfw-master\glfw-build\src\Release\glfw3.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(VULKAN_SDK)\glslang\build\glslang\Debug\glslang.lib;$(VULKAN_SDK)\glslang\build\OGLCompilersDLL\Debug\OGLCompiler.lib;$(VULKAN_SDK)\glslang\build\glslang\OSDependent\Windows\Debug\OSDependent.lib;$(VULKAN_SDK)\glslang\build\hlsl\Debug\HLSL.lib;$(VULKAN_SDK)\glslang\build\SPIRV\Debug\SPIRV.lib;$(VULKAN_SDK)\Bin\vulkan-1.lib;$(VULKAN_SDK)\spirv-tools\build\source\Debug\SPIRV-Tools.lib;$(SolutionDir)\lib\glfw3.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
