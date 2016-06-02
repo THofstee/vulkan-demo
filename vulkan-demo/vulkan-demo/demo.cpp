@@ -420,7 +420,7 @@ vk::Device create_device(const vk::PhysicalDevice& physical_device, const std::v
 // Create Render Pass
 vk::RenderPass create_render_pass(const vk::Device& device, const vk::Format& colorFormat) {
 	std::vector<vk::AttachmentDescription> attachment_descriptions;
-	attachment_descriptions.push_back(
+	attachment_descriptions.push_back( // framebuffer
 		vk::AttachmentDescription(
 			vk::AttachmentDescriptionFlags(),
 			colorFormat,
@@ -433,12 +433,33 @@ vk::RenderPass create_render_pass(const vk::Device& device, const vk::Format& co
 			vk::ImageLayout::eColorAttachmentOptimal
 		)
 	);
+	attachment_descriptions.push_back( // depth buffer
+		vk::AttachmentDescription(
+			vk::AttachmentDescriptionFlags(),
+			vk::Format::eD16Unorm,
+			vk::SampleCountFlagBits::e1,
+			vk::AttachmentLoadOp::eClear,
+			vk::AttachmentStoreOp::eDontCare,
+			vk::AttachmentLoadOp::eDontCare,
+			vk::AttachmentStoreOp::eDontCare,
+			vk::ImageLayout::eDepthStencilAttachmentOptimal,
+			vk::ImageLayout::eDepthStencilAttachmentOptimal
+		)
+	);
 
 	std::vector<vk::AttachmentReference> color_attachment_references;
 	color_attachment_references.push_back(
 		vk::AttachmentReference(
 			0,
 			vk::ImageLayout::eColorAttachmentOptimal
+		)
+	);
+
+	std::vector<vk::AttachmentReference> depth_attachment_references;
+	depth_attachment_references.push_back(
+		vk::AttachmentReference(
+			1,
+			vk::ImageLayout::eDepthStencilAttachmentOptimal
 		)
 	);
 
@@ -452,7 +473,7 @@ vk::RenderPass create_render_pass(const vk::Device& device, const vk::Format& co
 			(uint32_t)color_attachment_references.size(),
 			color_attachment_references.data(),
 			nullptr,
-			nullptr,
+			depth_attachment_references.data(),
 			0,
 			nullptr
 		)
@@ -560,6 +581,19 @@ void print_surface_capabilities(const vk::PhysicalDevice& physical_device, const
 *****************************************************************************/
 
 int main() {
+	// Vertices
+	std::vector<vertex> vertices = {
+		{ { -0.7f,  0.7f,  0.0f, 1.0f },{ 1.0f, 1.0f, 0.0f, 1.0f } },
+		{ {  0.7f,  0.7f,  0.0f, 1.0f },{ 0.0f, 1.0f, 1.0f, 1.0f } },
+		{ { -0.7f, -0.7f,  0.0f, 1.0f },{ 1.0f, 0.0f, 1.0f, 1.0f } },
+		{ { -0.7f, -0.7f,  0.0f, 1.0f },{ 1.0f, 0.0f, 1.0f, 1.0f } },
+		{ {  0.7f,  0.7f,  0.0f, 1.0f },{ 0.0f, 1.0f, 1.0f, 1.0f } },
+		{ {  0.7f, -0.7f,  0.0f, 1.0f },{ 1.0f, 1.0f, 0.0f, 1.0f } },
+		{ {  0.7f, -0.7f, -1.0f, 1.0f },{ 0.0f, 0.0f, 1.0f, 1.0f } },
+		{ { -0.7f,  0.7f, -1.0f, 1.0f },{ 0.0f, 0.0f, 1.0f, 1.0f } },
+		{ {  0.7f,  0.7f,  1.0f, 1.0f },{ 0.0f, 0.0f, 1.0f, 1.0f } }
+	};
+
 	// Initialize GLFW
 	init_glfw();
 
@@ -748,50 +782,6 @@ int main() {
 	// Create Render Pass
 	vk::RenderPass render_pass = create_render_pass(device, colorFormat);
 
-	// Create Framebuffer
-	std::vector<vk::ImageView> imageViews(images.size());
-	std::vector<vk::Framebuffer> framebuffers(images.size());
-	for (int k = 0; k < images.size(); k++) {
-		// Create image views
-		vk::ImageViewCreateInfo colorAttachmentView(
-			vk::ImageViewCreateFlags(),
-			images.at(k),
-			vk::ImageViewType::e2D,
-			colorFormat,
-			vk::ComponentMapping(vk::ComponentSwizzle::eR, vk::ComponentSwizzle::eG, vk::ComponentSwizzle::eB, vk::ComponentSwizzle::eA),
-			vk::ImageSubresourceRange(vk::ImageAspectFlags(vk::ImageAspectFlagBits::eColor), 0, 1, 0, 1)
-		);
-
-		try {
-			imageViews.at(k) = device.createImageView(colorAttachmentView);
-		}
-		catch (const std::system_error& e) {
-			fprintf(stderr, "Vulkan failure: %s\n", e.what());
-			system("pause");
-			exit(-1);
-		}
-
-		// Create framebuffers
-		vk::FramebufferCreateInfo framebuffer_create_info(
-			vk::FramebufferCreateFlags(),
-			render_pass,
-			1,
-			&imageViews[k],
-			WIDTH,
-			HEIGHT,
-			1
-		);
-
-		try {
-			framebuffers[k] = device.createFramebuffer(framebuffer_create_info);
-		}
-		catch (const std::system_error& e) {
-			fprintf(stderr, "Vulkan failure: %s\n", e.what());
-			system("pause");
-			exit(-1);
-		}
-	}
-
 	// Create depth buffer
 	// Create depth image
 	vk::ImageCreateInfo depth_image_create_info(
@@ -896,6 +886,54 @@ int main() {
 		exit(-1);
 	}
 
+	// Create Framebuffer
+	std::vector<vk::ImageView> imageViews(images.size());
+	std::vector<vk::Framebuffer> framebuffers(images.size());
+	for (int k = 0; k < images.size(); k++) {
+		// Create image views
+		vk::ImageViewCreateInfo colorAttachmentView(
+			vk::ImageViewCreateFlags(),
+			images.at(k),
+			vk::ImageViewType::e2D,
+			colorFormat,
+			vk::ComponentMapping(vk::ComponentSwizzle::eR, vk::ComponentSwizzle::eG, vk::ComponentSwizzle::eB, vk::ComponentSwizzle::eA),
+			vk::ImageSubresourceRange(vk::ImageAspectFlags(vk::ImageAspectFlagBits::eColor), 0, 1, 0, 1)
+		);
+
+		try {
+			imageViews.at(k) = device.createImageView(colorAttachmentView);
+		}
+		catch (const std::system_error& e) {
+			fprintf(stderr, "Vulkan failure: %s\n", e.what());
+			system("pause");
+			exit(-1);
+		}
+
+		std::vector<vk::ImageView> framebuffer_attachments;
+		framebuffer_attachments.push_back(imageViews.at(k));
+		framebuffer_attachments.push_back(depth_image_view);
+
+		// Create framebuffers
+		vk::FramebufferCreateInfo framebuffer_create_info(
+			vk::FramebufferCreateFlags(),
+			render_pass,
+			framebuffer_attachments.size(),
+			framebuffer_attachments.data(),
+			WIDTH,
+			HEIGHT,
+			1
+		);
+
+		try {
+			framebuffers[k] = device.createFramebuffer(framebuffer_create_info);
+		}
+		catch (const std::system_error& e) {
+			fprintf(stderr, "Vulkan failure: %s\n", e.what());
+			system("pause");
+			exit(-1);
+		}
+	}
+
 	// Create Shader Modules
 	std::vector<unsigned int> vertShaderSPV;
 	try {
@@ -977,7 +1015,7 @@ int main() {
 	vertex_input_binding_descriptions.push_back(
 		vk::VertexInputBindingDescription(
 			0,
-			sizeof(vertex),
+			sizeof(vertices.front()),
 			vk::VertexInputRate::eVertex
 		)
 	);
@@ -1196,16 +1234,6 @@ int main() {
 		system("pause");
 		exit(-1);
 	}
-
-	// Vertices
-	std::vector<vertex> vertices = {
-		{ { -0.7f,  0.7f, 0.0f, 1.0f },{ 1.0f, 1.0f, 0.0f, 1.0f } },
-		{ {  0.7f,  0.7f, 0.0f, 1.0f },{ 0.0f, 1.0f, 1.0f, 1.0f } },
-		{ { -0.7f, -0.7f, 0.0f, 1.0f },{ 1.0f, 0.0f, 1.0f, 1.0f } },
-		{ { -0.7f, -0.7f, 0.0f, 1.0f },{ 1.0f, 0.0f, 1.0f, 1.0f } },
-		{ {  0.7f,  0.7f, 0.0f, 1.0f },{ 0.0f, 1.0f, 1.0f, 1.0f } },
-		{ {  0.7f, -0.7f, 0.0f, 1.0f },{ 1.0f, 1.0f, 0.0f, 1.0f } }
-	};
 
 	// Create Vertex Buffer
 	vk::BufferCreateInfo vertex_buffer_create_info(
