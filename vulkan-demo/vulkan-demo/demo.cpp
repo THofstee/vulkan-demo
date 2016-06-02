@@ -6,6 +6,7 @@
 
 #include "SPIRV/GlslangToSpv.h"
 
+#define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 
 #define DEBUG true
@@ -56,6 +57,18 @@ VKAPI_ATTR VkBool32 VKAPI_CALL DebugToStderrCallback(
 std::vector<VkDebugReportCallbackEXT> callbacks;
 
 /*****************************************************************************
+* STRUCTS/CLASSES
+******************************************************************************/
+
+struct float3 {
+	float x, y, z;
+};
+
+struct float4 {
+	float x, y, z, w;
+};
+
+/*****************************************************************************
 * SHADERS
 ******************************************************************************/
 
@@ -63,9 +76,10 @@ std::string vertShaderText =
 R"vertexShader(
 #version 400
 
+layout(location = 0) in vec4 pos;
+
 void main() {
-    vec2 pos[3] = vec2[3]( vec2(-0.7, 0.7), vec2(0.7, 0.7), vec2(0.0, -0.7) );
-    gl_Position = vec4( pos[gl_VertexIndex], 0.0, 1.0 );
+    gl_Position = pos;
 }
 )vertexShader";
 
@@ -273,8 +287,8 @@ void create_callbacks(const vk::Instance& instance) {
 	);
 
 	VkDebugReportCallbackEXT callback;
+//TODO: See if this can be wrapped in VKCPP again, if not do error checking
 	VkResult result = vkCreateDebugReportCallbackEXT(instance, &(VkDebugReportCallbackCreateInfoEXT)callbackCreateInfo, nullptr, &callback);
-	//TODO: See if this can be wrapped in VKCPP again, if not do error checking
 	callbacks.push_back(callback);
 	//instance.createDebugReportCallbackEXT(callbackCreateInfo);
 }
@@ -808,7 +822,7 @@ int main() {
 
 	uint32_t depth_memory_type_index = 0;
 	uint32_t depth_memory_type_bits = depth_memory_requirements.memoryTypeBits;
-	for (int k = 0; k < 32; k++) {
+	for (uint32_t k = 0; k < 32; k++) {
 		if ((depth_memory_type_bits & 1) == 1) {
 			if ((physical_device.getMemoryProperties().memoryTypes[k].propertyFlags & vk::MemoryPropertyFlagBits::eDeviceLocal) == vk::MemoryPropertyFlagBits::eDeviceLocal) {
 				depth_memory_type_index = k;
@@ -947,13 +961,26 @@ int main() {
 	shader_stage_create_infos.push_back(vert_stage_create_info);
 	shader_stage_create_infos.push_back(frag_stage_create_info);
 
+	vk::VertexInputBindingDescription vertex_input_binding_description(
+		0,
+		sizeof(float4),
+		vk::VertexInputRate::eVertex
+	);
+
+	vk::VertexInputAttributeDescription vertex_input_attribute_description(
+		0,
+		0,
+		vk::Format::eR32G32B32A32Sfloat,
+		0
+	);
+
 	// Create Vertex Input Description
 	vk::PipelineVertexInputStateCreateInfo vertex_input_state_create_info(
 		vk::PipelineVertexInputStateCreateFlags(),
-		0,
-		nullptr,
-		0,
-		nullptr
+		1,
+		&vertex_input_binding_description,
+		1,
+		&vertex_input_attribute_description
 	);
 
 	// Create Input Assembly Description
@@ -1138,6 +1165,100 @@ int main() {
 	std::vector<vk::CommandBuffer> command_buffers;
 	try {
 		command_buffers = device.allocateCommandBuffers(cmd_buffer_allocate_info);
+	}
+	catch (const std::system_error& e) {
+		fprintf(stderr, "Vulkan failure: %s\n", e.what());
+		system("pause");
+		exit(-1);
+	}
+
+	// Create Vertex Buffer
+	vk::BufferCreateInfo vertex_buffer_create_info(
+		vk::BufferCreateFlags(),
+		vk::DeviceSize(sizeof(float4) * 3),
+		vk::BufferUsageFlags(vk::BufferUsageFlagBits::eVertexBuffer),
+		vk::SharingMode::eExclusive,
+		0,
+		nullptr
+	);
+
+	vk::Buffer vertex_buffer;
+	try {
+		vertex_buffer = device.createBuffer(vertex_buffer_create_info);
+	}
+	catch (const std::system_error& e) {
+		fprintf(stderr, "Vulkan failure: %s\n", e.what());
+		system("pause");
+		exit(-1);
+	}
+
+	vk::MemoryRequirements vertex_buffer_memory_requirements;
+	try {
+		vertex_buffer_memory_requirements = device.getBufferMemoryRequirements(vertex_buffer);
+	}
+	catch (const std::system_error& e) {
+		fprintf(stderr, "Vulkan failure: %s\n", e.what());
+		system("pause");
+		exit(-1);
+	}
+
+	// No staging yet, just allocate host visible memory for now.
+	uint32_t vertex_buffer_memory_type_index = 0;
+	uint32_t vertex_buffer_memory_type_bits = vertex_buffer_memory_requirements.memoryTypeBits;
+	for (uint32_t k = 0; k < 32; k++) {
+		if ((vertex_buffer_memory_type_bits & 1) == 1) {
+			if ((physical_device.getMemoryProperties().memoryTypes[k].propertyFlags & vk::MemoryPropertyFlagBits::eHostVisible) == vk::MemoryPropertyFlagBits::eHostVisible) {
+				vertex_buffer_memory_type_index = k;
+				break;
+			}
+		}
+
+		vertex_buffer_memory_type_bits >>= 1;
+	}
+
+	vk::MemoryAllocateInfo vertex_buffer_allocate_info(
+		vertex_buffer_memory_requirements.size,
+		vertex_buffer_memory_type_index
+	);
+
+	vk::DeviceMemory vertex_buffer_device_memory;
+	try {
+		vertex_buffer_device_memory = device.allocateMemory(vertex_buffer_allocate_info);
+	}
+	catch (const std::system_error& e) {
+		fprintf(stderr, "Vulkan failure: %s\n", e.what());
+		system("pause");
+		exit(-1);
+	}
+
+	float4* vertex_buffer_mapped_memory;
+	try {
+		vertex_buffer_mapped_memory = (float4*)device.mapMemory(vertex_buffer_device_memory, 0, VK_WHOLE_SIZE, vk::MemoryMapFlags());
+	}
+	catch (const std::system_error& e) {
+		fprintf(stderr, "Vulkan failure: %s\n", e.what());
+		system("pause");
+		exit(-1);
+	}
+
+	float4 v1 = { -0.7f,  0.7f, 0.0f, 1.0f };
+	float4 v2 = {  0.7f,  0.7f, 0.0f, 1.0f };
+	float4 v3 = {  0.0f, -0.7f, 0.0f, 1.0f };
+	vertex_buffer_mapped_memory[0] = v1;
+	vertex_buffer_mapped_memory[1] = v2;
+	vertex_buffer_mapped_memory[2] = v3;
+	
+	try {
+		device.unmapMemory(vertex_buffer_device_memory);
+	}
+	catch (const std::system_error& e) {
+		fprintf(stderr, "Vulkan failure: %s\n", e.what());
+		system("pause");
+		exit(-1);
+	}
+
+	try {
+		device.bindBufferMemory(vertex_buffer, vertex_buffer_device_memory, 0);
 	}
 	catch (const std::system_error& e) {
 		fprintf(stderr, "Vulkan failure: %s\n", e.what());
@@ -1341,6 +1462,7 @@ int main() {
 
 			command_buffers.at(k).beginRenderPass(&render_pass_begin_info, vk::SubpassContents::eInline);
 			command_buffers.at(k).bindPipeline(vk::PipelineBindPoint::eGraphics, graphics_pipelines[0]);
+			command_buffers.at(k).bindVertexBuffers(0, vertex_buffer, vk::DeviceSize());
 			command_buffers.at(k).draw(3, 1, 0, 0);
 			command_buffers.at(k).endRenderPass();
 			/*command_buffers.at(k).clearColorImage(
@@ -1417,7 +1539,7 @@ int main() {
 	system("pause");
 
 	// Clean Up
-	// TODO: FIX THIS FUNCTION
+// TODO: FIX THIS FUNCTION
 	// Destroy Callbacks (comment this out if you want to see debug info about cleanup)
 #if !DEBUG_CLEANUP
 	PFN_vkDestroyDebugReportCallbackEXT vkDestroyDebugReportCallbackEXT =
