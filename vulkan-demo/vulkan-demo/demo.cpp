@@ -68,29 +68,40 @@ struct float4 {
 	float x, y, z, w;
 };
 
+struct vertex {
+	float4 pos;
+	float4 col;
+};
+
 /*****************************************************************************
 * SHADERS
 ******************************************************************************/
 
 std::string vertShaderText =
 R"vertexShader(
-#version 400
+#version 440
 
 layout(location = 0) in vec4 pos;
+layout(location = 1) in vec4 col;
+
+layout(location = 1) out vec4 Col;
 
 void main() {
+	Col = col;
     gl_Position = pos;
 }
 )vertexShader";
 
 std::string fragShaderText =
 R"fragmentShader(
-#version 400
+#version 440
+
+layout(location = 1) in vec4 col;
 
 layout(location = 0) out vec4 out_Color;
 
 void main() {
-  out_Color = vec4( 0.0, 0.4, 1.0, 1.0 );
+  out_Color = col;
 }
 )fragmentShader";
 
@@ -961,26 +972,40 @@ int main() {
 	shader_stage_create_infos.push_back(vert_stage_create_info);
 	shader_stage_create_infos.push_back(frag_stage_create_info);
 
-	vk::VertexInputBindingDescription vertex_input_binding_description(
-		0,
-		sizeof(float4),
-		vk::VertexInputRate::eVertex
-	);
-
-	vk::VertexInputAttributeDescription vertex_input_attribute_description(
-		0,
-		0,
-		vk::Format::eR32G32B32A32Sfloat,
-		0
-	);
-
 	// Create Vertex Input Description
+	std::vector<vk::VertexInputBindingDescription> vertex_input_binding_descriptions;
+	vertex_input_binding_descriptions.push_back(
+		vk::VertexInputBindingDescription(
+			0,
+			sizeof(vertex),
+			vk::VertexInputRate::eVertex
+		)
+	);
+
+	std::vector<vk::VertexInputAttributeDescription> vertex_input_attribute_descriptions;
+	vertex_input_attribute_descriptions.push_back( //Position
+		vk::VertexInputAttributeDescription(
+			0,
+			0,
+			vk::Format::eR32G32B32A32Sfloat,
+			0
+		)
+	);
+	vertex_input_attribute_descriptions.push_back( // Color
+		vk::VertexInputAttributeDescription(
+			1,
+			0,
+			vk::Format::eR32G32B32A32Sfloat,
+			sizeof(float4)
+		)
+	);
+
 	vk::PipelineVertexInputStateCreateInfo vertex_input_state_create_info(
 		vk::PipelineVertexInputStateCreateFlags(),
-		1,
-		&vertex_input_binding_description,
-		1,
-		&vertex_input_attribute_description
+		vertex_input_binding_descriptions.size(),
+		vertex_input_binding_descriptions.data(),
+		vertex_input_attribute_descriptions.size(),
+		vertex_input_attribute_descriptions.data()
 	);
 
 	// Create Input Assembly Description
@@ -1172,10 +1197,20 @@ int main() {
 		exit(-1);
 	}
 
+	// Vertices
+	std::vector<vertex> vertices = {
+		{ { -0.7f,  0.7f, 0.0f, 1.0f },{ 1.0f, 1.0f, 0.0f, 1.0f } },
+		{ {  0.7f,  0.7f, 0.0f, 1.0f },{ 0.0f, 1.0f, 1.0f, 1.0f } },
+		{ { -0.7f, -0.7f, 0.0f, 1.0f },{ 1.0f, 0.0f, 1.0f, 1.0f } },
+		{ { -0.7f, -0.7f, 0.0f, 1.0f },{ 1.0f, 0.0f, 1.0f, 1.0f } },
+		{ {  0.7f,  0.7f, 0.0f, 1.0f },{ 0.0f, 1.0f, 1.0f, 1.0f } },
+		{ {  0.7f, -0.7f, 0.0f, 1.0f },{ 1.0f, 1.0f, 0.0f, 1.0f } }
+	};
+
 	// Create Vertex Buffer
 	vk::BufferCreateInfo vertex_buffer_create_info(
 		vk::BufferCreateFlags(),
-		vk::DeviceSize(sizeof(float4) * 3),
+		vk::DeviceSize(vertices.size() * sizeof(vertices.front())),
 		vk::BufferUsageFlags(vk::BufferUsageFlagBits::eVertexBuffer),
 		vk::SharingMode::eExclusive,
 		0,
@@ -1231,9 +1266,9 @@ int main() {
 		exit(-1);
 	}
 
-	float4* vertex_buffer_mapped_memory;
+	void* vertex_buffer_mapped_memory;
 	try {
-		vertex_buffer_mapped_memory = (float4*)device.mapMemory(vertex_buffer_device_memory, 0, VK_WHOLE_SIZE, vk::MemoryMapFlags());
+		vertex_buffer_mapped_memory = device.mapMemory(vertex_buffer_device_memory, 0, VK_WHOLE_SIZE, vk::MemoryMapFlags());
 	}
 	catch (const std::system_error& e) {
 		fprintf(stderr, "Vulkan failure: %s\n", e.what());
@@ -1241,12 +1276,7 @@ int main() {
 		exit(-1);
 	}
 
-	float4 v1 = { -0.7f,  0.7f, 0.0f, 1.0f };
-	float4 v2 = {  0.7f,  0.7f, 0.0f, 1.0f };
-	float4 v3 = {  0.0f, -0.7f, 0.0f, 1.0f };
-	vertex_buffer_mapped_memory[0] = v1;
-	vertex_buffer_mapped_memory[1] = v2;
-	vertex_buffer_mapped_memory[2] = v3;
+	memcpy(vertex_buffer_mapped_memory, vertices.data(), vertices.size() * sizeof(vertices.front()));
 	
 	try {
 		device.unmapMemory(vertex_buffer_device_memory);
@@ -1463,7 +1493,7 @@ int main() {
 			command_buffers.at(k).beginRenderPass(&render_pass_begin_info, vk::SubpassContents::eInline);
 			command_buffers.at(k).bindPipeline(vk::PipelineBindPoint::eGraphics, graphics_pipelines[0]);
 			command_buffers.at(k).bindVertexBuffers(0, vertex_buffer, vk::DeviceSize());
-			command_buffers.at(k).draw(3, 1, 0, 0);
+			command_buffers.at(k).draw(vertices.size(), 1, 0, 0);
 			command_buffers.at(k).endRenderPass();
 			/*command_buffers.at(k).clearColorImage(
 			images.at(k),
