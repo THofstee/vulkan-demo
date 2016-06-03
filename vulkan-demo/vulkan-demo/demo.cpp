@@ -15,6 +15,7 @@
 
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
+#include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
 #define DEBUG true
@@ -77,8 +78,9 @@ struct float4 {
 };
 
 struct vertex {
-	float4 pos;
+	float3 pos;
 	float4 col;
+	float3 norm;
 };
 
 /*****************************************************************************
@@ -89,19 +91,22 @@ std::string vertShaderText =
 R"vertexShader(
 #version 440
 
-layout(location = 0) in vec4 pos;
+layout(location = 0) in vec3 pos;
 layout(location = 1) in vec4 col;
+layout(location = 2) in vec3 norm;
 
 layout(location = 1) out vec4 Col;
 
 layout(binding = 0) uniform UBO
 {
 	mat4 proj;
+	mat4 view;
 } ubo;
 
 void main() {
-	Col = col;
-	gl_Position = ubo.proj * pos;
+	vec3 lightdir = normalize(vec3(-.3, -.4, -.6));
+	Col = col * clamp(dot(norm, -lightdir), 0.0, 1.0);
+	gl_Position = ubo.proj * ubo.view * vec4(pos, 1.0);
 }
 )vertexShader";
 
@@ -593,18 +598,27 @@ void print_surface_capabilities(const vk::PhysicalDevice& physical_device, const
 * VERTEX TEST FUNCTIONS
 ******************************************************************************/
 
+// Generates a triangle
+std::vector<vertex> test_triangle() {
+	return{
+		{ { -0.8f,  0.8f, -2.0f },{ 1.0f, 1.0f, 0.0f, 1.0f },{ 0.0f, 0.0f, 1.0f } },
+		{ {  0.7f,  0.7f, -2.0f },{ 0.0f, 1.0f, 1.0f, 1.0f },{ 0.0f, 0.0f, 1.0f } },
+		{ { -0.7f, -0.7f, -2.0f },{ 1.0f, 0.0f, 1.0f, 1.0f },{ 0.0f, 0.0f, 1.0f } }
+	};
+}
+
 // Generates a set of vertices to test zbuffer
 std::vector<vertex> test_zbuffer() {
-	return{
-		{ { -0.7f,  0.7f,  0.0f, 1.0f },{ 1.0f, 1.0f, 0.0f, 1.0f } },
-		{ {  0.7f,  0.7f,  0.0f, 1.0f },{ 0.0f, 1.0f, 1.0f, 1.0f } },
-		{ { -0.7f, -0.7f,  0.0f, 1.0f },{ 1.0f, 0.0f, 1.0f, 1.0f } },
-		{ { -0.7f, -0.7f,  0.0f, 1.0f },{ 1.0f, 0.0f, 1.0f, 1.0f } },
-		{ {  0.7f,  0.7f,  0.0f, 1.0f },{ 0.0f, 1.0f, 1.0f, 1.0f } },
-		{ {  0.7f, -0.7f,  0.0f, 1.0f },{ 1.0f, 1.0f, 0.0f, 1.0f } },
-		{ {  0.7f, -0.7f, -1.0f, 1.0f },{ 0.0f, 0.0f, 1.0f, 1.0f } },
-		{ { -0.7f,  0.7f, -1.0f, 1.0f },{ 0.0f, 0.0f, 1.0f, 1.0f } },
-		{ {  0.7f,  0.7f,  1.0f, 1.0f },{ 0.0f, 0.0f, 1.0f, 1.0f } }
+	return {
+		{ { -0.7f,  0.7f,  0.0f },{ 1.0f, 1.0f, 0.0f, 1.0f },{ 0.0f, 0.0f, 1.0f} },
+		{ {  0.7f,  0.7f,  0.0f },{ 0.0f, 1.0f, 1.0f, 1.0f },{ 0.0f, 0.0f, 1.0f } },
+		{ { -0.7f, -0.7f,  0.0f },{ 1.0f, 0.0f, 1.0f, 1.0f },{ 0.0f, 0.0f, 1.0f } },
+		{ { -0.7f, -0.7f,  0.0f },{ 1.0f, 0.0f, 1.0f, 1.0f },{ 0.0f, 0.0f, 1.0f } },
+		{ {  0.7f,  0.7f,  0.0f },{ 0.0f, 1.0f, 1.0f, 1.0f },{ 0.0f, 0.0f, 1.0f } },
+		{ {  0.7f, -0.7f,  0.0f },{ 1.0f, 1.0f, 0.0f, 1.0f },{ 0.0f, 0.0f, 1.0f } },
+		{ {  0.7f, -0.7f, -1.0f },{ 0.0f, 0.0f, 1.0f, 1.0f },{ 0.0f, 0.0f, 1.0f } }, //these normals
+		{ { -0.7f,  0.7f, -1.0f },{ 0.0f, 0.0f, 1.0f, 1.0f },{ 0.0f, 0.0f, 1.0f } }, //are actually
+		{ {  0.7f,  0.7f,  1.0f },{ 0.0f, 0.0f, 1.0f, 1.0f },{ 0.0f, 0.0f, 1.0f } }  //wrong.
 	};
 }
 
@@ -614,31 +628,31 @@ std::vector<vertex> test_zbuffer_rc() {
 	std::default_random_engine gen(rd());
 	std::uniform_real_distribution<> dis(0, 1);
 
-	return{
-		{ { -0.7f,  0.7f,  0.0f, 1.0f },{ (float)dis(gen), (float)dis(gen), (float)dis(gen), 1.0f } },
-		{ {  0.7f,  0.7f,  0.0f, 1.0f },{ (float)dis(gen), (float)dis(gen), (float)dis(gen), 1.0f } },
-		{ { -0.7f, -0.7f,  0.0f, 1.0f },{ (float)dis(gen), (float)dis(gen), (float)dis(gen), 1.0f } },
-		{ { -0.7f, -0.7f,  0.0f, 1.0f },{ (float)dis(gen), (float)dis(gen), (float)dis(gen), 1.0f } },
-		{ {  0.7f,  0.7f,  0.0f, 1.0f },{ (float)dis(gen), (float)dis(gen), (float)dis(gen), 1.0f } },
-		{ {  0.7f, -0.7f,  0.0f, 1.0f },{ (float)dis(gen), (float)dis(gen), (float)dis(gen), 1.0f } },
-		{ {  0.7f, -0.7f, -1.0f, 1.0f },{ (float)dis(gen), (float)dis(gen), (float)dis(gen), 1.0f } },
-		{ { -0.7f,  0.7f, -1.0f, 1.0f },{ (float)dis(gen), (float)dis(gen), (float)dis(gen), 1.0f } },
-		{ {  0.7f,  0.7f,  1.0f, 1.0f },{ (float)dis(gen), (float)dis(gen), (float)dis(gen), 1.0f } }
+	return {
+		{ { -0.7f,  0.7f,  0.0f },{ (float)dis(gen), (float)dis(gen), (float)dis(gen), 1.0f },{ 0.0f, 0.0f, 1.0f } },
+		{ {  0.7f,  0.7f,  0.0f },{ (float)dis(gen), (float)dis(gen), (float)dis(gen), 1.0f },{ 0.0f, 0.0f, 1.0f } },
+		{ { -0.7f, -0.7f,  0.0f },{ (float)dis(gen), (float)dis(gen), (float)dis(gen), 1.0f },{ 0.0f, 0.0f, 1.0f } },
+		{ { -0.7f, -0.7f,  0.0f },{ (float)dis(gen), (float)dis(gen), (float)dis(gen), 1.0f },{ 0.0f, 0.0f, 1.0f } },
+		{ {  0.7f,  0.7f,  0.0f },{ (float)dis(gen), (float)dis(gen), (float)dis(gen), 1.0f },{ 0.0f, 0.0f, 1.0f } },
+		{ {  0.7f, -0.7f,  0.0f },{ (float)dis(gen), (float)dis(gen), (float)dis(gen), 1.0f },{ 0.0f, 0.0f, 1.0f } },
+		{ {  0.7f, -0.7f, -1.0f },{ (float)dis(gen), (float)dis(gen), (float)dis(gen), 1.0f },{ 0.0f, 0.0f, 1.0f } }, //these normals
+		{ { -0.7f,  0.7f, -1.0f },{ (float)dis(gen), (float)dis(gen), (float)dis(gen), 1.0f },{ 0.0f, 0.0f, 1.0f } }, //are actually
+		{ {  0.7f,  0.7f,  1.0f },{ (float)dis(gen), (float)dis(gen), (float)dis(gen), 1.0f },{ 0.0f, 0.0f, 1.0f } }  //wrong.
 	};
 }
 
 // Test projection matrix
 std::vector<vertex> test_proj() {
-	return{
-		{ { -0.7f,  0.7f, -3.0f, 1.0f },{ 1.0f, 1.0f, 0.0f, 1.0f } },
-		{ {  0.7f,  0.7f, -3.0f, 1.0f },{ 0.0f, 1.0f, 1.0f, 1.0f } },
-		{ { -0.7f, -0.7f, -3.0f, 1.0f },{ 1.0f, 0.0f, 1.0f, 1.0f } },
-		{ { -0.7f, -0.7f, -3.0f, 1.0f },{ 1.0f, 0.0f, 1.0f, 1.0f } },
-		{ {  0.7f,  0.7f, -3.0f, 1.0f },{ 0.0f, 1.0f, 1.0f, 1.0f } },
-		{ {  0.7f, -0.7f, -3.0f, 1.0f },{ 1.0f, 1.0f, 0.0f, 1.0f } },
-		{ {  1.2f, -1.6f, -5.0f, 1.0f },{ 0.0f, 1.0f, 1.0f, 1.0f } },
-		{ { -1.6f,  1.2f, -5.0f, 1.0f },{ 1.0f, 1.0f, 0.0f, 1.0f } },
-		{ {  0.3f,  0.3f, -2.0f, 1.0f },{ 1.0f, 0.0f, 1.0f, 1.0f } }
+	return {
+		{ { -0.7f,  0.7f, -3.0f },{ 1.0f, 1.0f, 0.0f, 1.0f },{ 0.0f, 0.0f, 1.0f } },
+		{ {  0.7f,  0.7f, -3.0f },{ 0.0f, 1.0f, 1.0f, 1.0f },{ 0.0f, 0.0f, 1.0f } },
+		{ { -0.7f, -0.7f, -3.0f },{ 1.0f, 0.0f, 1.0f, 1.0f },{ 0.0f, 0.0f, 1.0f } },
+		{ { -0.7f, -0.7f, -3.0f },{ 1.0f, 0.0f, 1.0f, 1.0f },{ 0.0f, 0.0f, 1.0f } },
+		{ {  0.7f,  0.7f, -3.0f },{ 0.0f, 1.0f, 1.0f, 1.0f },{ 0.0f, 0.0f, 1.0f } },
+		{ {  0.7f, -0.7f, -3.0f },{ 1.0f, 1.0f, 0.0f, 1.0f },{ 0.0f, 0.0f, 1.0f } },
+		{ {  1.2f, -1.6f, -5.0f },{ 0.0f, 1.0f, 1.0f, 1.0f },{ 0.0f, 0.0f, 1.0f } }, //these normals
+		{ { -1.6f,  1.2f, -5.0f },{ 1.0f, 1.0f, 0.0f, 1.0f },{ 0.0f, 0.0f, 1.0f } }, //are acutally
+		{ {  0.3f,  0.3f, -2.0f },{ 1.0f, 0.0f, 1.0f, 1.0f },{ 0.0f, 0.0f, 1.0f } }  //wrong.
 	};
 }
 
@@ -656,13 +670,125 @@ std::vector<vertex> test_proj() {
 //         \ |    .-'
 //          \| .-'
 //           +'   hs
-// with random colors
-//std::vector<vertex> test_cube_rc() {
-//	float mag = 0.7;
-//
-//	return {
-//		{ -mag, mag, mag, 1.0f },{ ;
-//}
+std::vector<vertex> test_cube() {
+	float mag = 0.7f;
+
+	return{
+		//Front (red)
+		{ { -mag,  mag,  mag },{ 1.0f, 0.0f, 0.0f, 1.0f },{  0.0f,  0.0f,  1.0f } },
+		{ {  mag,  mag,  mag },{ 1.0f, 0.0f, 0.0f, 1.0f },{  0.0f,  0.0f,  1.0f } },
+		{ { -mag, -mag,  mag },{ 1.0f, 0.0f, 0.0f, 1.0f },{  0.0f,  0.0f,  1.0f } },
+		{ { -mag, -mag,  mag },{ 1.0f, 0.0f, 0.0f, 1.0f },{  0.0f,  0.0f,  1.0f } },
+		{ {  mag,  mag,  mag },{ 1.0f, 0.0f, 0.0f, 1.0f },{  0.0f,  0.0f,  1.0f } },
+		{ {  mag, -mag,  mag },{ 1.0f, 0.0f, 0.0f, 1.0f },{  0.0f,  0.0f,  1.0f } },
+		//Left (green)
+		{ { -mag,  mag,  mag },{ 0.0f, 1.0f, 0.0f, 1.0f },{ -1.0f,  0.0f,  0.0f } },
+		{ { -mag, -mag,  mag },{ 0.0f, 1.0f, 0.0f, 1.0f },{ -1.0f,  0.0f,  0.0f } },
+		{ { -mag,  mag, -mag },{ 0.0f, 1.0f, 0.0f, 1.0f },{ -1.0f,  0.0f,  0.0f } },
+		{ { -mag, -mag,  mag },{ 0.0f, 1.0f, 0.0f, 1.0f },{ -1.0f,  0.0f,  0.0f } },
+		{ { -mag, -mag, -mag },{ 0.0f, 1.0f, 0.0f, 1.0f },{ -1.0f,  0.0f,  0.0f } },
+		{ { -mag,  mag, -mag },{ 0.0f, 1.0f, 0.0f, 1.0f },{ -1.0f,  0.0f,  0.0f } },
+		//Right (blue)
+		{ {  mag,  mag,  mag },{ 0.0f, 0.0f, 1.0f, 1.0f },{  1.0f,  0.0f,  0.0f } },
+		{ {  mag,  mag, -mag },{ 0.0f, 0.0f, 1.0f, 1.0f },{  1.0f,  0.0f,  0.0f } },
+		{ {  mag, -mag,  mag },{ 0.0f, 0.0f, 1.0f, 1.0f },{  1.0f,  0.0f,  0.0f } },
+		{ {  mag, -mag,  mag },{ 0.0f, 0.0f, 1.0f, 1.0f },{  1.0f,  0.0f,  0.0f } },
+		{ {  mag,  mag, -mag },{ 0.0f, 0.0f, 1.0f, 1.0f },{  1.0f,  0.0f,  0.0f } },
+		{ {  mag, -mag, -mag },{ 0.0f, 0.0f, 1.0f, 1.0f },{  1.0f,  0.0f,  0.0f } },
+		//Top (yellow)
+		{ { -mag,  mag,  mag },{ 1.0f, 1.0f, 0.0f, 1.0f },{  0.0f,  1.0f,  0.0f } },
+		{ {  mag,  mag, -mag },{ 1.0f, 1.0f, 0.0f, 1.0f },{  0.0f,  1.0f,  0.0f } },
+		{ {  mag,  mag,  mag },{ 1.0f, 1.0f, 0.0f, 1.0f },{  0.0f,  1.0f,  0.0f } },
+		{ {  mag,  mag, -mag },{ 1.0f, 1.0f, 0.0f, 1.0f },{  0.0f,  1.0f,  0.0f } },
+		{ { -mag,  mag,  mag },{ 1.0f, 1.0f, 0.0f, 1.0f },{  0.0f,  1.0f,  0.0f } },
+		{ { -mag,  mag, -mag },{ 1.0f, 1.0f, 0.0f, 1.0f },{  0.0f,  1.0f,  0.0f } },
+		//Bottom (magenta)
+		{ { -mag, -mag,  mag },{ 1.0f, 0.0f, 1.0f, 1.0f },{  0.0f, -1.0f,  0.0f } },
+		{ {  mag, -mag,  mag },{ 1.0f, 0.0f, 1.0f, 1.0f },{  0.0f, -1.0f,  0.0f } },
+		{ {  mag, -mag, -mag },{ 1.0f, 0.0f, 1.0f, 1.0f },{  0.0f, -1.0f,  0.0f } },
+		{ {  mag, -mag, -mag },{ 1.0f, 0.0f, 1.0f, 1.0f },{  0.0f, -1.0f,  0.0f } },
+		{ { -mag, -mag, -mag },{ 1.0f, 0.0f, 1.0f, 1.0f },{  0.0f, -1.0f,  0.0f } },
+		{ { -mag, -mag,  mag },{ 1.0f, 0.0f, 1.0f, 1.0f },{  0.0f, -1.0f,  0.0f } },
+		//Back (cyan)
+		{ { -mag,  mag, -mag },{ 0.0f, 1.0f, 1.0f, 1.0f },{  0.0f,  0.0f, -1.0f } },
+		{ { -mag, -mag, -mag },{ 0.0f, 1.0f, 1.0f, 1.0f },{  0.0f,  0.0f, -1.0f } },
+		{ {  mag,  mag, -mag },{ 0.0f, 1.0f, 1.0f, 1.0f },{  0.0f,  0.0f, -1.0f } },
+		{ {  mag,  mag, -mag },{ 0.0f, 1.0f, 1.0f, 1.0f },{  0.0f,  0.0f, -1.0f } },
+		{ { -mag, -mag, -mag },{ 0.0f, 1.0f, 1.0f, 1.0f },{  0.0f,  0.0f, -1.0f } },
+		{ {  mag, -mag, -mag },{ 0.0f, 1.0f, 1.0f, 1.0f },{  0.0f,  0.0f, -1.0f } }
+	};
+
+}
+
+//             _.-+.
+//        _.-""     '.
+//    +:""            '.
+//    J \               '.
+//     L \             _.-+
+//     |  '.       _.-"   |
+//     J    \  _.-"       L
+//      L    +"          J
+//      +    |           |
+//       \   |          .+
+//        \  |       .-'
+//         \ |    .-'
+//          \| .-'
+//           +'   hs
+// single color cube
+std::vector<vertex> test_cube_solid() {
+	std::random_device rd;
+	std::default_random_engine gen(rd());
+	std::uniform_real_distribution<> dis(0, 1);
+	float4 col = { dis(gen), dis(gen), dis(gen), 1.0f };
+
+	float mag = 0.7f;
+
+	return{
+		//Front
+		{ { -mag,  mag,  mag },col,{  0.0f,  0.0f,  1.0f } },
+		{ {  mag,  mag,  mag },col,{  0.0f,  0.0f,  1.0f } },
+		{ { -mag, -mag,  mag },col,{  0.0f,  0.0f,  1.0f } },
+		{ { -mag, -mag,  mag },col,{  0.0f,  0.0f,  1.0f } },
+		{ {  mag,  mag,  mag },col,{  0.0f,  0.0f,  1.0f } },
+		{ {  mag, -mag,  mag },col,{  0.0f,  0.0f,  1.0f } },
+		//Left
+		{ { -mag,  mag,  mag },col,{ -1.0f,  0.0f,  0.0f } },
+		{ { -mag, -mag,  mag },col,{ -1.0f,  0.0f,  0.0f } },
+		{ { -mag,  mag, -mag },col,{ -1.0f,  0.0f,  0.0f } },
+		{ { -mag, -mag,  mag },col,{ -1.0f,  0.0f,  0.0f } },
+		{ { -mag, -mag, -mag },col,{ -1.0f,  0.0f,  0.0f } },
+		{ { -mag,  mag, -mag },col,{ -1.0f,  0.0f,  0.0f } },
+		//Right
+		{ {  mag,  mag,  mag },col,{  1.0f,  0.0f,  0.0f } },
+		{ {  mag,  mag, -mag },col,{  1.0f,  0.0f,  0.0f } },
+		{ {  mag, -mag,  mag },col,{  1.0f,  0.0f,  0.0f } },
+		{ {  mag, -mag,  mag },col,{  1.0f,  0.0f,  0.0f } },
+		{ {  mag,  mag, -mag },col,{  1.0f,  0.0f,  0.0f } },
+		{ {  mag, -mag, -mag },col,{  1.0f,  0.0f,  0.0f } },
+		//Top
+		{ { -mag,  mag,  mag },col,{  0.0f,  1.0f,  0.0f } },
+		{ {  mag,  mag, -mag },col,{  0.0f,  1.0f,  0.0f } },
+		{ {  mag,  mag,  mag },col,{  0.0f,  1.0f,  0.0f } },
+		{ {  mag,  mag, -mag },col,{  0.0f,  1.0f,  0.0f } },
+		{ { -mag,  mag,  mag },col,{  0.0f,  1.0f,  0.0f } },
+		{ { -mag,  mag, -mag },col,{  0.0f,  1.0f,  0.0f } },
+		//Bottom
+		{ { -mag, -mag,  mag },col,{  0.0f, -1.0f,  0.0f } },
+		{ {  mag, -mag,  mag },col,{  0.0f, -1.0f,  0.0f } },
+		{ {  mag, -mag, -mag },col,{  0.0f, -1.0f,  0.0f } },
+		{ {  mag, -mag, -mag },col,{  0.0f, -1.0f,  0.0f } },
+		{ { -mag, -mag, -mag },col,{  0.0f, -1.0f,  0.0f } },
+		{ { -mag, -mag,  mag },col,{  0.0f, -1.0f,  0.0f } },
+		//Back
+		{ { -mag,  mag, -mag },col,{  0.0f,  0.0f, -1.0f } },
+		{ { -mag, -mag, -mag },col,{  0.0f,  0.0f, -1.0f } },
+		{ {  mag,  mag, -mag },col,{  0.0f,  0.0f, -1.0f } },
+		{ {  mag,  mag, -mag },col,{  0.0f,  0.0f, -1.0f } },
+		{ { -mag, -mag, -mag },col,{  0.0f,  0.0f, -1.0f } },
+		{ {  mag, -mag, -mag },col,{  0.0f,  0.0f, -1.0f } }
+	};
+
+}
 
 /*****************************************************************************
 * MAIN FUNCTION
@@ -672,7 +798,7 @@ int main() {
 	// Vertices
 	std::vector<vertex> vertices;
 	// Test vertices
-	vertices = test_proj();
+	vertices = test_cube_solid();
 
 	// TinyObjLoader
 	/*std::string inputfile = "../meshes/teapot/teapot.obj";
@@ -714,9 +840,11 @@ int main() {
 	// Uniforms
 	struct {
 		glm::mat4 projection_matrix;
+		glm::mat4 view_matrix;
 	} uboVS;
 
 	uboVS.projection_matrix = glm::perspective(glm::radians(60.0f), (float)WIDTH / (float)HEIGHT, 0.1f, 256.0f);
+	uboVS.view_matrix = glm::lookAt(glm::vec3(1, 1, 2), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0));
 
 	// Initialize GLFW
 	init_glfw();
@@ -1161,6 +1289,14 @@ int main() {
 			sizeof(vertices.front().pos)
 		)
 	);
+	vertex_input_attribute_descriptions.push_back( // Normal
+		vk::VertexInputAttributeDescription(
+			2,
+			0,
+			vk::Format::eR32G32B32A32Sfloat,
+			(sizeof(vertices.front().pos) + sizeof(vertices.front().col))
+		)
+	);
 
 	vk::PipelineVertexInputStateCreateInfo vertex_input_state_create_info(
 		vk::PipelineVertexInputStateCreateFlags(),
@@ -1210,7 +1346,7 @@ int main() {
 		VK_FALSE,
 		VK_FALSE,
 		vk::PolygonMode::eFill,
-		vk::CullModeFlags(vk::CullModeFlagBits::eNone),
+		vk::CullModeFlags(vk::CullModeFlagBits::eBack),
 		vk::FrontFace::eCounterClockwise,
 		VK_FALSE,
 		0.0f,
