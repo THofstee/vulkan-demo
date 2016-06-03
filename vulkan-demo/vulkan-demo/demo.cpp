@@ -1291,7 +1291,7 @@ int main() {
 		vk::VertexInputAttributeDescription(
 			0,
 			0,
-			vk::Format::eR32G32B32A32Sfloat,
+			vk::Format::eR32G32B32Sfloat,
 			0
 		)
 	);
@@ -1307,7 +1307,7 @@ int main() {
 		vk::VertexInputAttributeDescription(
 			2,
 			0,
-			vk::Format::eR32G32B32A32Sfloat,
+			vk::Format::eR32G32B32Sfloat,
 			(sizeof(vertices.front().pos) + sizeof(vertices.front().col))
 		)
 	);
