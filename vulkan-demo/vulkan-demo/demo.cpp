@@ -1,13 +1,21 @@
 #include <stdlib.h>
 #include <vector>
+#include <random>
 
 #include <vulkan/vulkan.h>
 #include "vk_cpp.hpp"
 
 #include "SPIRV/GlslangToSpv.h"
 
+#define TINYOBJLOADER_IMPLEMENTATION
+#include "tiny_obj_loader.h"
+
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
+
+#define GLM_FORCE_RADIANS
+#define GLM_FORCE_DEPTH_ZERO_TO_ONE
+#include <glm/gtc/matrix_transform.hpp>
 
 #define DEBUG true
 #define DEBUG_CLEANUP true
@@ -86,9 +94,14 @@ layout(location = 1) in vec4 col;
 
 layout(location = 1) out vec4 Col;
 
+layout(binding = 0) uniform UBO
+{
+	mat4 proj;
+} ubo;
+
 void main() {
 	Col = col;
-    gl_Position = pos;
+	gl_Position = ubo.proj * pos;
 }
 )vertexShader";
 
@@ -577,12 +590,12 @@ void print_surface_capabilities(const vk::PhysicalDevice& physical_device, const
 }
 
 /*****************************************************************************
-* MAIN FUNCTION
-*****************************************************************************/
+* VERTEX TEST FUNCTIONS
+******************************************************************************/
 
-int main() {
-	// Vertices
-	std::vector<vertex> vertices = {
+// Generates a set of vertices to test zbuffer
+std::vector<vertex> test_zbuffer() {
+	return{
 		{ { -0.7f,  0.7f,  0.0f, 1.0f },{ 1.0f, 1.0f, 0.0f, 1.0f } },
 		{ {  0.7f,  0.7f,  0.0f, 1.0f },{ 0.0f, 1.0f, 1.0f, 1.0f } },
 		{ { -0.7f, -0.7f,  0.0f, 1.0f },{ 1.0f, 0.0f, 1.0f, 1.0f } },
@@ -593,6 +606,117 @@ int main() {
 		{ { -0.7f,  0.7f, -1.0f, 1.0f },{ 0.0f, 0.0f, 1.0f, 1.0f } },
 		{ {  0.7f,  0.7f,  1.0f, 1.0f },{ 0.0f, 0.0f, 1.0f, 1.0f } }
 	};
+}
+
+// Test zbuffer with random colors
+std::vector<vertex> test_zbuffer_rc() {
+	std::random_device rd;
+	std::default_random_engine gen(rd());
+	std::uniform_real_distribution<> dis(0, 1);
+
+	return{
+		{ { -0.7f,  0.7f,  0.0f, 1.0f },{ (float)dis(gen), (float)dis(gen), (float)dis(gen), 1.0f } },
+		{ {  0.7f,  0.7f,  0.0f, 1.0f },{ (float)dis(gen), (float)dis(gen), (float)dis(gen), 1.0f } },
+		{ { -0.7f, -0.7f,  0.0f, 1.0f },{ (float)dis(gen), (float)dis(gen), (float)dis(gen), 1.0f } },
+		{ { -0.7f, -0.7f,  0.0f, 1.0f },{ (float)dis(gen), (float)dis(gen), (float)dis(gen), 1.0f } },
+		{ {  0.7f,  0.7f,  0.0f, 1.0f },{ (float)dis(gen), (float)dis(gen), (float)dis(gen), 1.0f } },
+		{ {  0.7f, -0.7f,  0.0f, 1.0f },{ (float)dis(gen), (float)dis(gen), (float)dis(gen), 1.0f } },
+		{ {  0.7f, -0.7f, -1.0f, 1.0f },{ (float)dis(gen), (float)dis(gen), (float)dis(gen), 1.0f } },
+		{ { -0.7f,  0.7f, -1.0f, 1.0f },{ (float)dis(gen), (float)dis(gen), (float)dis(gen), 1.0f } },
+		{ {  0.7f,  0.7f,  1.0f, 1.0f },{ (float)dis(gen), (float)dis(gen), (float)dis(gen), 1.0f } }
+	};
+}
+
+// Test projection matrix
+std::vector<vertex> test_proj() {
+	return{
+		{ { -0.7f,  0.7f, -3.0f, 1.0f },{ 1.0f, 1.0f, 0.0f, 1.0f } },
+		{ {  0.7f,  0.7f, -3.0f, 1.0f },{ 0.0f, 1.0f, 1.0f, 1.0f } },
+		{ { -0.7f, -0.7f, -3.0f, 1.0f },{ 1.0f, 0.0f, 1.0f, 1.0f } },
+		{ { -0.7f, -0.7f, -3.0f, 1.0f },{ 1.0f, 0.0f, 1.0f, 1.0f } },
+		{ {  0.7f,  0.7f, -3.0f, 1.0f },{ 0.0f, 1.0f, 1.0f, 1.0f } },
+		{ {  0.7f, -0.7f, -3.0f, 1.0f },{ 1.0f, 1.0f, 0.0f, 1.0f } },
+		{ {  1.2f, -1.6f, -5.0f, 1.0f },{ 0.0f, 1.0f, 1.0f, 1.0f } },
+		{ { -1.6f,  1.2f, -5.0f, 1.0f },{ 1.0f, 1.0f, 0.0f, 1.0f } },
+		{ {  0.3f,  0.3f, -2.0f, 1.0f },{ 1.0f, 0.0f, 1.0f, 1.0f } }
+	};
+}
+
+//             _.-+.
+//        _.-""     '.
+//    +:""            '.
+//    J \               '.
+//     L \             _.-+
+//     |  '.       _.-"   |
+//     J    \  _.-"       L
+//      L    +"          J
+//      +    |           |
+//       \   |          .+
+//        \  |       .-'
+//         \ |    .-'
+//          \| .-'
+//           +'   hs
+// with random colors
+//std::vector<vertex> test_cube_rc() {
+//	float mag = 0.7;
+//
+//	return {
+//		{ -mag, mag, mag, 1.0f },{ ;
+//}
+
+/*****************************************************************************
+* MAIN FUNCTION
+*****************************************************************************/
+
+int main() {
+	// Vertices
+	std::vector<vertex> vertices;
+	// Test vertices
+	vertices = test_proj();
+
+	// TinyObjLoader
+	/*std::string inputfile = "../meshes/teapot/teapot.obj";
+	std::string mtldir = "../meshes/teapot/";
+	std::vector<tinyobj::shape_t> shapes;
+	std::vector<tinyobj::material_t> materials;
+
+	std::string err;
+	bool ret = tinyobj::LoadObj(shapes, materials, err, inputfile.c_str(), mtldir.c_str());
+
+	if (!err.empty()) {
+		fprintf(stderr, "%s\n", err.c_str());
+	}
+	if (!ret) {
+		fprintf(stderr, "tinyobjloader failed to load obj\n");
+		system("pause");
+		exit(-1);
+	}
+
+	printf("Num shapes:    %llu\n", shapes.size());
+	printf("Num materials: %llu\n", shapes.size());
+
+	std::random_device rd;
+	std::default_random_engine gen(rd());
+	std::uniform_real_distribution<> dis(0, 1);
+
+	for (size_t i = 0; i < shapes.size(); i++) {
+		for (size_t v = 0; v < shapes.at(i).mesh.positions.size() / 3; v++) {
+			vertices.push_back({
+				{ shapes.at(i).mesh.positions[3 * v + 0], shapes.at(i).mesh.positions[3 * v + 1], shapes.at(i).mesh.positions[3 * v + 2], 1.0f },
+				{ (float)dis(gen), (float)dis(gen), (float)dis(gen), 1.0f }
+			});
+		}
+	}
+	
+
+	printf("\n---\n\n");*/
+
+	// Uniforms
+	struct {
+		glm::mat4 projection_matrix;
+	} uboVS;
+
+	uboVS.projection_matrix = glm::perspective(glm::radians(60.0f), (float)WIDTH / (float)HEIGHT, 0.1f, 256.0f);
 
 	// Initialize GLFW
 	init_glfw();
@@ -917,7 +1041,7 @@ int main() {
 		vk::FramebufferCreateInfo framebuffer_create_info(
 			vk::FramebufferCreateFlags(),
 			render_pass,
-			framebuffer_attachments.size(),
+			(uint32_t)framebuffer_attachments.size(),
 			framebuffer_attachments.data(),
 			WIDTH,
 			HEIGHT,
@@ -1034,15 +1158,15 @@ int main() {
 			1,
 			0,
 			vk::Format::eR32G32B32A32Sfloat,
-			sizeof(float4)
+			sizeof(vertices.front().pos)
 		)
 	);
 
 	vk::PipelineVertexInputStateCreateInfo vertex_input_state_create_info(
 		vk::PipelineVertexInputStateCreateFlags(),
-		vertex_input_binding_descriptions.size(),
+		(uint32_t)vertex_input_binding_descriptions.size(),
 		vertex_input_binding_descriptions.data(),
-		vertex_input_attribute_descriptions.size(),
+		(uint32_t)vertex_input_attribute_descriptions.size(),
 		vertex_input_attribute_descriptions.data()
 	);
 
@@ -1086,7 +1210,7 @@ int main() {
 		VK_FALSE,
 		VK_FALSE,
 		vk::PolygonMode::eFill,
-		vk::CullModeFlags(vk::CullModeFlagBits::eBack),
+		vk::CullModeFlags(vk::CullModeFlagBits::eNone),
 		vk::FrontFace::eCounterClockwise,
 		VK_FALSE,
 		0.0f,
@@ -1104,6 +1228,20 @@ int main() {
 		nullptr,
 		VK_FALSE,
 		VK_FALSE
+	);
+
+	// Create Depth Stencil Description
+	vk::PipelineDepthStencilStateCreateInfo depth_stencil_create_info(
+		vk::PipelineDepthStencilStateCreateFlags(),
+		VK_TRUE,
+		VK_TRUE,
+		vk::CompareOp::eLessOrEqual,
+		VK_FALSE,
+		VK_FALSE,
+		vk::StencilOpState(vk::StencilOp::eKeep, vk::StencilOp::eKeep, vk::StencilOp::eKeep, vk::CompareOp::eAlways, 0, 0, 0),
+		vk::StencilOpState(vk::StencilOp::eKeep, vk::StencilOp::eKeep, vk::StencilOp::eKeep, vk::CompareOp::eAlways, 0, 0, 0),
+		0,
+		0
 	);
 
 	// Create Blending State Description
@@ -1129,11 +1267,60 @@ int main() {
 		{ 0.0f, 0.0f, 0.0f, 0.0f }
 	);
 
+	// Set up descriptor pool
+	std::vector<vk::DescriptorPoolSize> descriptor_pool_sizes;
+	descriptor_pool_sizes.push_back(vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, 1));
+
+	vk::DescriptorPoolCreateInfo descriptor_pool_create_info(
+		vk::DescriptorPoolCreateFlags(),
+		1,
+		(uint32_t)descriptor_pool_sizes.size(),
+		descriptor_pool_sizes.data()
+	);
+
+	vk::DescriptorPool descriptor_pool;
+	try {
+		descriptor_pool = device.createDescriptorPool(descriptor_pool_create_info);
+	}
+	catch (const std::system_error& e) {
+		fprintf(stderr, "Vulkan failure: %s\n", e.what());
+		system("pause");
+		exit(-1);
+	}
+
+	// Create descriptor set layout
+	std::vector<vk::DescriptorSetLayoutBinding> layout_bindings;
+	layout_bindings.push_back(
+		vk::DescriptorSetLayoutBinding(
+			0,
+			vk::DescriptorType::eUniformBuffer,
+			1,
+			vk::ShaderStageFlags(vk::ShaderStageFlagBits::eVertex),
+			nullptr
+		)
+	);
+
+	vk::DescriptorSetLayoutCreateInfo descriptor_set_layout_create_info(
+		vk::DescriptorSetLayoutCreateFlags(),
+		(uint32_t)layout_bindings.size(),
+		layout_bindings.data()
+	);
+
+	std::vector<vk::DescriptorSetLayout> descriptor_set_layouts;
+	try {
+		descriptor_set_layouts.push_back(device.createDescriptorSetLayout(descriptor_set_layout_create_info));
+	}
+	catch (const std::system_error& e) {
+		fprintf(stderr, "Vulkan failure: %s\n", e.what());
+		system("pause");
+		exit(-1);
+	}
+
 	// Create Pipeline Layout
 	vk::PipelineLayoutCreateInfo layout_create_info(
 		vk::PipelineLayoutCreateFlags(),
-		0,
-		nullptr,
+		(uint32_t)descriptor_set_layouts.size(),
+		descriptor_set_layouts.data(),
 		0,
 		nullptr
 	);
@@ -1159,7 +1346,7 @@ int main() {
 		&viewport_state_create_info,
 		&rasterization_state_create_info,
 		&multisample_state_create_info,
-		nullptr,
+		&depth_stencil_create_info,
 		&color_blend_state_create_info,
 		nullptr,
 		pipeline_layout,
@@ -1235,6 +1422,138 @@ int main() {
 		exit(-1);
 	}
 
+	// Create Uniform Buffer
+	vk::BufferCreateInfo uniform_buffer_create_info(
+		vk::BufferCreateFlags(),
+		vk::DeviceSize(sizeof(uboVS)),
+		vk::BufferUsageFlags(vk::BufferUsageFlagBits::eUniformBuffer),
+		vk::SharingMode::eExclusive,
+		0,
+		nullptr
+	);
+
+	vk::Buffer uniform_buffer;
+	try {
+		uniform_buffer = device.createBuffer(uniform_buffer_create_info);
+	}
+	catch (const std::system_error& e) {
+		fprintf(stderr, "Vulkan failure: %s\n", e.what());
+		system("pause");
+		exit(-1);
+	}
+
+	vk::MemoryRequirements uniform_buffer_memory_requirements;
+	try {
+		uniform_buffer_memory_requirements = device.getBufferMemoryRequirements(uniform_buffer);
+	}
+	catch (const std::system_error& e) {
+		fprintf(stderr, "Vulkan failure: %s\n", e.what());
+		system("pause");
+		exit(-1);
+	}
+
+	// Allocate host visible (change to coherent?) memory
+	uint32_t uniform_buffer_memory_type_index = 0;
+	uint32_t uniform_buffer_memory_type_bits = uniform_buffer_memory_requirements.memoryTypeBits;
+	for (uint32_t k = 0; k < 32; k++) {
+		if ((uniform_buffer_memory_type_bits & 1) == 1) {
+			if ((physical_device.getMemoryProperties().memoryTypes[k].propertyFlags & (vk::MemoryPropertyFlagBits::eHostVisible)) == (vk::MemoryPropertyFlagBits::eHostVisible)) {
+				uniform_buffer_memory_type_index = k;
+				break;
+			}
+		}
+
+		uniform_buffer_memory_type_bits >>= 1;
+	}
+
+	vk::MemoryAllocateInfo uniform_buffer_allocate_info(
+		uniform_buffer_memory_requirements.size,
+		uniform_buffer_memory_type_index
+	);
+
+	vk::DeviceMemory uniform_buffer_device_memory;
+	try {
+		uniform_buffer_device_memory = device.allocateMemory(uniform_buffer_allocate_info);
+	}
+	catch (const std::system_error& e) {
+		fprintf(stderr, "Vulkan failure: %s\n", e.what());
+		system("pause");
+		exit(-1);
+	}
+
+	void* uniform_buffer_mapped_memory;
+	try {
+		uniform_buffer_mapped_memory = device.mapMemory(uniform_buffer_device_memory, 0, sizeof(uboVS), vk::MemoryMapFlags());
+	}
+	catch (const std::system_error& e) {
+		fprintf(stderr, "Vulkan failure: %s\n", e.what());
+		system("pause");
+		exit(-1);
+	}
+
+	memcpy(uniform_buffer_mapped_memory, &uboVS, sizeof(uboVS));
+
+	try {
+		device.unmapMemory(uniform_buffer_device_memory);
+	}
+	catch (const std::system_error& e) {
+		fprintf(stderr, "Vulkan failure: %s\n", e.what());
+		system("pause");
+		exit(-1);
+	}
+
+	try {
+		device.bindBufferMemory(uniform_buffer, uniform_buffer_device_memory, 0);
+	}
+	catch (const std::system_error& e) {
+		fprintf(stderr, "Vulkan failure: %s\n", e.what());
+		system("pause");
+		exit(-1);
+	}
+
+	vk::DescriptorBufferInfo uniform_buffer_descriptor(
+		uniform_buffer,
+		0,
+		sizeof(uboVS)
+	);
+
+	// Create descriptor set
+	vk::DescriptorSetAllocateInfo descriptor_set_allocate_info(
+		descriptor_pool,
+		(uint32_t)descriptor_set_layouts.size(),
+		descriptor_set_layouts.data()
+	);
+
+	std::vector<vk::DescriptorSet> descriptor_sets;
+	try {
+		descriptor_sets = device.allocateDescriptorSets(descriptor_set_allocate_info);
+	}
+	catch (const std::system_error& e) {
+		fprintf(stderr, "Vulkan failure: %s\n", e.what());
+		system("pause");
+		exit(-1);
+	}
+
+	vk::WriteDescriptorSet write_descriptor_set(
+		descriptor_sets.at(0),
+		0,
+		0,
+		1,
+		vk::DescriptorType::eUniformBuffer,
+		nullptr,
+		&uniform_buffer_descriptor,
+		nullptr
+	);
+
+	try {
+		device.updateDescriptorSets(write_descriptor_set, nullptr);
+	}
+	catch (const std::system_error& e) {
+		fprintf(stderr, "Vulkan failure: %s\n", e.what());
+		system("pause");
+		exit(-1);
+	}
+
 	// Create Vertex Buffer
 	vk::BufferCreateInfo vertex_buffer_create_info(
 		vk::BufferCreateFlags(),
@@ -1296,7 +1615,7 @@ int main() {
 
 	void* vertex_buffer_mapped_memory;
 	try {
-		vertex_buffer_mapped_memory = device.mapMemory(vertex_buffer_device_memory, 0, VK_WHOLE_SIZE, vk::MemoryMapFlags());
+		vertex_buffer_mapped_memory = device.mapMemory(vertex_buffer_device_memory, 0, vertices.size() * sizeof(vertices.front()), vk::MemoryMapFlags());
 	}
 	catch (const std::system_error& e) {
 		fprintf(stderr, "Vulkan failure: %s\n", e.what());
@@ -1326,11 +1645,16 @@ int main() {
 
 	// Record command buffers
 	// Prelim data
-	vk::ClearColorValue clear_color(
-		std::array<float, 4>{ 0.467f, 0.725f, 0.f, 0.f }
+	std::vector<vk::ClearValue> clear_values;
+	clear_values.push_back(
+		vk::ClearValue(
+			std::array<float, 4>{ 0.467f, 0.725f, 0.f, 0.f }
+		)
 	);
-	vk::ClearValue clear_value(
-		std::array<float, 4>{ 0.467f, 0.725f, 0.f, 0.f }
+	clear_values.push_back(
+		vk::ClearDepthStencilValue(
+			1.0f, 0
+		)
 	);
 
 	vk::ImageSubresourceRange image_subresource_range(
@@ -1514,21 +1838,16 @@ int main() {
 				render_pass,
 				framebuffers[k],
 				vk::Rect2D(vk::Offset2D(0, 0), vk::Extent2D(WIDTH, HEIGHT)),
-				1,
-				&clear_value
+				(uint32_t)clear_values.size(),
+				clear_values.data()
 			);
 
 			command_buffers.at(k).beginRenderPass(&render_pass_begin_info, vk::SubpassContents::eInline);
+			command_buffers.at(k).bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipeline_layout, 0, descriptor_sets, (const uint32_t)0);
 			command_buffers.at(k).bindPipeline(vk::PipelineBindPoint::eGraphics, graphics_pipelines[0]);
 			command_buffers.at(k).bindVertexBuffers(0, vertex_buffer, vk::DeviceSize());
-			command_buffers.at(k).draw(vertices.size(), 1, 0, 0);
+			command_buffers.at(k).draw((uint32_t)vertices.size(), 1, 0, 0);
 			command_buffers.at(k).endRenderPass();
-			/*command_buffers.at(k).clearColorImage(
-			images.at(k),
-			vk::ImageLayout::eTransferDstOptimal,
-			clear_color,
-			image_subresource_range
-			);*/
 			command_buffers.at(k).pipelineBarrier(
 				vk::PipelineStageFlags(vk::PipelineStageFlagBits::eTransfer),
 				vk::PipelineStageFlags(vk::PipelineStageFlagBits::eBottomOfPipe),

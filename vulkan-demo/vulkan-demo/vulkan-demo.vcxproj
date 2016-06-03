@@ -74,7 +74,7 @@
       <WarningLevel>Level4</WarningLevel>
       <Optimization>Disabled</Optimization>
       <SDLCheck>true</SDLCheck>
-      <AdditionalIncludeDirectories>$(SolutionDir)\utils;$(SolutionDir)\utils\GLFW;$(VULKAN_SDK)\Include;$(VULKAN_SDK)\glslang;$(VULKAN_SDK)\spirv-tools\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)\utils;$(VULKAN_SDK)\Include;$(VULKAN_SDK)\glslang;$(VULKAN_SDK)\spirv-tools\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <AdditionalDependencies>$(VULKAN_SDK)\glslang\build\glslang\Debug\glslang.lib;$(VULKAN_SDK)\glslang\build\OGLCompilersDLL\Debug\OGLCompiler.lib;$(VULKAN_SDK)\glslang\build\glslang\OSDependent\Windows\Debug\OSDependent.lib;$(VULKAN_SDK)\glslang\build\hlsl\Debug\HLSL.lib;$(VULKAN_SDK)\glslang\build\SPIRV\Debug\SPIRV.lib;$(VULKAN_SDK)\Bin\vulkan-1.lib;$(VULKAN_SDK)\spirv-tools\build\source\Debug\SPIRV-Tools.lib;$(SolutionDir)\lib\glfw3.lib;%(AdditionalDependencies)</AdditionalDependencies>
@@ -85,7 +85,7 @@
       <WarningLevel>Level4</WarningLevel>
       <Optimization>Disabled</Optimization>
       <SDLCheck>true</SDLCheck>
-      <AdditionalIncludeDirectories>$(SolutionDir)\utils;$(SolutionDir)\utils\GLFW;$(VULKAN_SDK)\Include;$(VULKAN_SDK)\glslang;$(VULKAN_SDK)\spirv-tools\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)\utils;$(VULKAN_SDK)\Include;$(VULKAN_SDK)\glslang;$(VULKAN_SDK)\spirv-tools\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <AdditionalDependencies>$(VULKAN_SDK)\glslang\build\glslang\Debug\glslang.lib;$(VULKAN_SDK)\glslang\build\OGLCompilersDLL\Debug\OGLCompiler.lib;$(VULKAN_SDK)\glslang\build\glslang\OSDependent\Windows\Debug\OSDependent.lib;$(VULKAN_SDK)\glslang\build\hlsl\Debug\HLSL.lib;$(VULKAN_SDK)\glslang\build\SPIRV\Debug\SPIRV.lib;$(VULKAN_SDK)\Bin\vulkan-1.lib;$(VULKAN_SDK)\spirv-tools\build\source\Debug\SPIRV-Tools.lib;$(SolutionDir)\lib\glfw3.lib;%(AdditionalDependencies)</AdditionalDependencies>
@@ -98,7 +98,7 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <AdditionalIncludeDirectories>$(SolutionDir)\utils;$(SolutionDir)\utils\GLFW;$(VULKAN_SDK)\Include;$(VULKAN_SDK)\glslang;$(VULKAN_SDK)\spirv-tools\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)\utils;$(VULKAN_SDK)\Include;$(VULKAN_SDK)\glslang;$(VULKAN_SDK)\spirv-tools\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
@@ -113,7 +113,7 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <AdditionalIncludeDirectories>$(SolutionDir)\utils;$(SolutionDir)\utils\GLFW;$(VULKAN_SDK)\Include;$(VULKAN_SDK)\glslang;$(VULKAN_SDK)\spirv-tools\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)\utils;$(VULKAN_SDK)\Include;$(VULKAN_SDK)\glslang;$(VULKAN_SDK)\spirv-tools\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
