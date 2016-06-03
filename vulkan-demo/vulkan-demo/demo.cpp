@@ -16,6 +16,7 @@
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/glm.hpp>
+#include <glm/gtx/transform.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
 #define DEBUG true
@@ -46,6 +47,12 @@
 #else
 #define D__(x) do {   } while(0)
 #endif
+
+// GLFW Error Callback
+void error_callback(int error, const char* description)
+{
+	fprintf(stderr, "%s\n", description);
+}
 
 // Debug callback direct to stderr
 VKAPI_ATTR VkBool32 VKAPI_CALL DebugToStderrCallback(
@@ -101,12 +108,13 @@ layout(binding = 0) uniform UBO
 {
 	mat4 proj;
 	mat4 view;
+	mat4 model;
 } ubo;
 
 void main() {
 	vec3 lightdir = normalize(vec3(-.3, -.4, -.6));
-	Col = col * clamp(dot(norm, -lightdir), 0.0, 1.0);
-	gl_Position = ubo.proj * ubo.view * vec4(pos, 1.0);
+	Col = col * clamp(dot((ubo.model * vec4(norm, 1.0)).xyz, -lightdir), 0.0, 1.0);
+	gl_Position = ubo.proj * ubo.view * ubo.model * vec4(pos, 1.0);
 }
 )vertexShader";
 
@@ -282,6 +290,9 @@ void init_glfw() {
 		system("pause");
 		exit(-1);
 	}
+
+	// Set GLFW Error Callback
+	glfwSetErrorCallback(error_callback);
 
 	// Check for Vulkan support
 	if (glfwVulkanSupported() == GLFW_FALSE) {
@@ -711,8 +722,8 @@ std::vector<vertex> test_cube() {
 		{ { -mag, -mag,  mag },{ 1.0f, 0.0f, 1.0f, 1.0f },{  0.0f, -1.0f,  0.0f } },
 		//Back (cyan)
 		{ { -mag,  mag, -mag },{ 0.0f, 1.0f, 1.0f, 1.0f },{  0.0f,  0.0f, -1.0f } },
-		{ { -mag, -mag, -mag },{ 0.0f, 1.0f, 1.0f, 1.0f },{  0.0f,  0.0f, -1.0f } },
 		{ {  mag,  mag, -mag },{ 0.0f, 1.0f, 1.0f, 1.0f },{  0.0f,  0.0f, -1.0f } },
+		{ { -mag, -mag, -mag },{ 0.0f, 1.0f, 1.0f, 1.0f },{  0.0f,  0.0f, -1.0f } },
 		{ {  mag,  mag, -mag },{ 0.0f, 1.0f, 1.0f, 1.0f },{  0.0f,  0.0f, -1.0f } },
 		{ { -mag, -mag, -mag },{ 0.0f, 1.0f, 1.0f, 1.0f },{  0.0f,  0.0f, -1.0f } },
 		{ {  mag, -mag, -mag },{ 0.0f, 1.0f, 1.0f, 1.0f },{  0.0f,  0.0f, -1.0f } }
@@ -798,7 +809,7 @@ int main() {
 	// Vertices
 	std::vector<vertex> vertices;
 	// Test vertices
-	vertices = test_cube_solid();
+	vertices = test_cube();
 
 	// TinyObjLoader
 	/*std::string inputfile = "../meshes/teapot/teapot.obj";
@@ -807,7 +818,7 @@ int main() {
 	std::vector<tinyobj::material_t> materials;
 
 	std::string err;
-	bool ret = tinyobj::LoadObj(shapes, materials, err, inputfile.c_str(), mtldir.c_str());
+	bool ret = tinyobj::LoadObj(shapes, materials, err, inputfile.c_str(), mtldir.c_str(), tinyobj::triangulation | tinyobj::calculate_normals);
 
 	if (!err.empty()) {
 		fprintf(stderr, "%s\n", err.c_str());
@@ -828,8 +839,9 @@ int main() {
 	for (size_t i = 0; i < shapes.size(); i++) {
 		for (size_t v = 0; v < shapes.at(i).mesh.positions.size() / 3; v++) {
 			vertices.push_back({
-				{ shapes.at(i).mesh.positions[3 * v + 0], shapes.at(i).mesh.positions[3 * v + 1], shapes.at(i).mesh.positions[3 * v + 2], 1.0f },
-				{ (float)dis(gen), (float)dis(gen), (float)dis(gen), 1.0f }
+				{ shapes.at(i).mesh.positions[3 * v + 0], shapes.at(i).mesh.positions[3 * v + 1], shapes.at(i).mesh.positions[3 * v + 2] },
+				{ (float)dis(gen), (float)dis(gen), (float)dis(gen), 1.0f },
+				{ shapes.at(i).mesh.normals[3 * v + 0], shapes.at(i).mesh.normals[3 * v + 1], shapes.at(i).mesh.normals[3 * v + 2] }
 			});
 		}
 	}
@@ -841,10 +853,12 @@ int main() {
 	struct {
 		glm::mat4 projection_matrix;
 		glm::mat4 view_matrix;
+		glm::mat4 model_matrix;
 	} uboVS;
 
 	uboVS.projection_matrix = glm::perspective(glm::radians(60.0f), (float)WIDTH / (float)HEIGHT, 0.1f, 256.0f);
 	uboVS.view_matrix = glm::lookAt(glm::vec3(1, 1, 2), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0));
+	uboVS.model_matrix = glm::mat4();
 
 	// Initialize GLFW
 	init_glfw();
@@ -1346,7 +1360,7 @@ int main() {
 		VK_FALSE,
 		VK_FALSE,
 		vk::PolygonMode::eFill,
-		vk::CullModeFlags(vk::CullModeFlagBits::eBack),
+		vk::CullModeFlags(vk::CullModeFlagBits::eNone),
 		vk::FrontFace::eCounterClockwise,
 		VK_FALSE,
 		0.0f,
@@ -1935,7 +1949,7 @@ int main() {
 		nullptr
 	);
 
-	// Render
+	// Record Command Buffer
 	for (int k = 0; k < images.size(); k++) {
 		vk::ImageMemoryBarrier barrier_from_present_to_clear(
 			vk::AccessFlags(),
@@ -1979,7 +1993,7 @@ int main() {
 			);
 
 			command_buffers.at(k).beginRenderPass(&render_pass_begin_info, vk::SubpassContents::eInline);
-			command_buffers.at(k).bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipeline_layout, 0, descriptor_sets, (const uint32_t)0);
+			command_buffers.at(k).bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipeline_layout, 0, descriptor_sets, nullptr);
 			command_buffers.at(k).bindPipeline(vk::PipelineBindPoint::eGraphics, graphics_pipelines[0]);
 			command_buffers.at(k).bindVertexBuffers(0, vertex_buffer, vk::DeviceSize());
 			command_buffers.at(k).draw((uint32_t)vertices.size(), 1, 0, 0);
@@ -2003,50 +2017,173 @@ int main() {
 		}
 	}
 
-	// Get next swapchain image
-	uint32_t next_image;
-	try {
-		next_image = device.acquireNextImageKHR(swapchain, UINT64_MAX, imageAvailableSemaphore, VK_NULL_HANDLE).value;
-	}
-	catch (const std::system_error& e) {
-		fprintf(stderr, "Vulkan failure: %s\n", e.what());
-		system("pause");
-		exit(-1);
-	}
+	// Render Loop
+	do {
+		glm::vec3 camera_pos = glm::vec3(1.0f, 1.0f, 2.0f);
+		glm::vec3 camera_target = glm::vec3(0.0f, 0.0f, 0.0f);
+		glm::vec3 camera_direction = glm::normalize(camera_pos - camera_target);
+		glm::vec3 camera_right = glm::normalize(glm::cross(glm::vec3(0.0f, 1.0f, 0.0f), camera_direction));
+		glm::vec3 camera_up = glm::cross(camera_direction, camera_right);
 
-	vk::PipelineStageFlags wait_dst_stage_mask = vk::PipelineStageFlags(vk::PipelineStageFlagBits::eColorAttachmentOutput);
+		// GLFW Input Handling
+		glfwPollEvents();
+		if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
+			break;
+		}
+//TODO: Move the following functions to a GLFW key callback
+		else if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS) {
+			uboVS.model_matrix = glm::rotate(0.0004f, glm::vec3(0.0f, 1.0f, 0.0f)) * uboVS.model_matrix;
 
-	// Submit to queue
-	vk::SubmitInfo submit_info(
-		1,
-		&imageAvailableSemaphore,
-		&wait_dst_stage_mask,
-		1,
-		&command_buffers[next_image],
-		1,
-		&renderingFinishedSemaphore
-	);
+			void* uniform_buffer_mapped_memory;
+			try {
+				uniform_buffer_mapped_memory = device.mapMemory(uniform_buffer_device_memory, 0, sizeof(uboVS), vk::MemoryMapFlags());
+			}
+			catch (const std::system_error& e) {
+				fprintf(stderr, "Vulkan failure: %s\n", e.what());
+				system("pause");
+				exit(-1);
+			}
 
-	present_queue.submit(submit_info, VK_NULL_HANDLE);
+			memcpy(uniform_buffer_mapped_memory, &uboVS, sizeof(uboVS));
 
-	// Present image to render
-	vk::PresentInfoKHR present_info(
-		1,
-		&renderingFinishedSemaphore,
-		1,
-		&swapchain,
-		&next_image,
-		(vk::Result *) nullptr
-	);
+			try {
+				device.unmapMemory(uniform_buffer_device_memory);
+			}
+			catch (const std::system_error& e) {
+				fprintf(stderr, "Vulkan failure: %s\n", e.what());
+				system("pause");
+				exit(-1);
+			}
+		}
+		else if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS) {
+			uboVS.model_matrix = glm::rotate(-0.0004f, glm::vec3(0.0f, 1.0f, 0.0f)) * uboVS.model_matrix;
 
-	try {
-		present_queue.presentKHR(present_info);
-	}
-	catch (const std::system_error& e) {
-		fprintf(stderr, "Vulkan failure: %s\n", e.what());
-		system("pause");
-		exit(-1);
-	}
+			void* uniform_buffer_mapped_memory;
+			try {
+				uniform_buffer_mapped_memory = device.mapMemory(uniform_buffer_device_memory, 0, sizeof(uboVS), vk::MemoryMapFlags());
+			}
+			catch (const std::system_error& e) {
+				fprintf(stderr, "Vulkan failure: %s\n", e.what());
+				system("pause");
+				exit(-1);
+			}
+
+			memcpy(uniform_buffer_mapped_memory, &uboVS, sizeof(uboVS));
+
+			try {
+				device.unmapMemory(uniform_buffer_device_memory);
+			}
+			catch (const std::system_error& e) {
+				fprintf(stderr, "Vulkan failure: %s\n", e.what());
+				system("pause");
+				exit(-1);
+			}
+		}
+		else if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS) {
+			uboVS.model_matrix = glm::rotate(-0.0004f, camera_right) * uboVS.model_matrix;
+
+			void* uniform_buffer_mapped_memory;
+			try {
+				uniform_buffer_mapped_memory = device.mapMemory(uniform_buffer_device_memory, 0, sizeof(uboVS), vk::MemoryMapFlags());
+			}
+			catch (const std::system_error& e) {
+				fprintf(stderr, "Vulkan failure: %s\n", e.what());
+				system("pause");
+				exit(-1);
+			}
+
+			memcpy(uniform_buffer_mapped_memory, &uboVS, sizeof(uboVS));
+
+			try {
+				device.unmapMemory(uniform_buffer_device_memory);
+			}
+			catch (const std::system_error& e) {
+				fprintf(stderr, "Vulkan failure: %s\n", e.what());
+				system("pause");
+				exit(-1);
+			}
+		}
+		else if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS) {
+			uboVS.model_matrix = glm::rotate(0.0004f, camera_right) * uboVS.model_matrix;
+
+			void* uniform_buffer_mapped_memory;
+			try {
+				uniform_buffer_mapped_memory = device.mapMemory(uniform_buffer_device_memory, 0, sizeof(uboVS), vk::MemoryMapFlags());
+			}
+			catch (const std::system_error& e) {
+				fprintf(stderr, "Vulkan failure: %s\n", e.what());
+				system("pause");
+				exit(-1);
+			}
+
+			memcpy(uniform_buffer_mapped_memory, &uboVS, sizeof(uboVS));
+
+			try {
+				device.unmapMemory(uniform_buffer_device_memory);
+			}
+			catch (const std::system_error& e) {
+				fprintf(stderr, "Vulkan failure: %s\n", e.what());
+				system("pause");
+				exit(-1);
+			}
+		}
+
+		
+
+		// Get next swapchain image
+		uint32_t next_image;
+		try {
+			next_image = device.acquireNextImageKHR(swapchain, UINT64_MAX, imageAvailableSemaphore, VK_NULL_HANDLE).value;
+		}
+		catch (const std::system_error& e) {
+			fprintf(stderr, "Vulkan failure: %s\n", e.what());
+			system("pause");
+			exit(-1);
+		}
+
+		vk::PipelineStageFlags wait_dst_stage_mask = vk::PipelineStageFlags(vk::PipelineStageFlagBits::eColorAttachmentOutput);
+
+		// Submit to queue
+		vk::SubmitInfo submit_info(
+			1,
+			&imageAvailableSemaphore,
+			&wait_dst_stage_mask,
+			1,
+			&command_buffers[next_image],
+			1,
+			&renderingFinishedSemaphore
+		);
+
+		present_queue.submit(submit_info, VK_NULL_HANDLE);
+
+		// Present image to render
+		vk::PresentInfoKHR present_info(
+			1,
+			&renderingFinishedSemaphore,
+			1,
+			&swapchain,
+			&next_image,
+			(vk::Result *) nullptr
+		);
+
+		try {
+			present_queue.presentKHR(present_info);
+		}
+		catch (const std::system_error& e) {
+			fprintf(stderr, "Vulkan failure: %s\n", e.what());
+			system("pause");
+			exit(-1);
+		}
+
+		try {
+			device.waitIdle();
+		}
+		catch (const std::system_error& e) {
+			fprintf(stderr, "Vulkan failure: %s\n", e.what());
+			system("pause");
+			exit(-1);
+		}
+	} while (1);
 
 	// Wait for user before closing
 	system("pause");
