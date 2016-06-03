@@ -1,0 +1,3 @@
+[submodule "vulkan-demo/utils/glm"]
+	path = vulkan-demo/utils/glm
+	url = https://github.com/g-truc/glm
