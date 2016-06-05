@@ -36,6 +36,8 @@ extern "C" {
 	_declspec(dllexport) DWORD NvOptimusEnablement = 0x00000001;
 }
 
+bool quit;
+
 /*****************************************************************************
 * DEBUG
 *****************************************************************************/
@@ -293,7 +295,13 @@ typename std::vector<unsigned int, Allocator> GLSLtoSPV(const vk::ShaderStageFla
 * HELPER FUNCTIONS
 *****************************************************************************/
 
-void init_glfw() {
+// GLFW Window Close Callback
+void winclose_callback(GLFWwindow* window)
+{
+	quit = true;
+}
+
+GLFWwindow* init_glfw() {
 	// Initialize GLFW
 	if (glfwInit() == GLFW_FALSE) {
 		fprintf(stderr, "ERROR: GLFW failed to initialize.\n");
@@ -304,12 +312,21 @@ void init_glfw() {
 	// Set GLFW Error Callback
 	glfwSetErrorCallback(error_callback);
 
+	// Window creation
+	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API); // Not using OpenGL so no need to create context
+	GLFWwindow* window = glfwCreateWindow(WIDTH, HEIGHT, "instance", nullptr, nullptr);
+
+	// Set GLFW Window Close Callback
+	glfwSetWindowCloseCallback(window, winclose_callback);
+
 	// Check for Vulkan support
 	if (glfwVulkanSupported() == GLFW_FALSE) {
 		fprintf(stderr, "ERROR: Vulkan is not supported.\n");
 		system("pause");
 		exit(-1);
 	}
+
+	return window;
 }
 
 void init_glslang() {
@@ -871,7 +888,7 @@ int main() {
 	uboVS.model_matrix = glm::mat4();
 
 	// Initialize GLFW
-	init_glfw();
+	GLFWwindow* window = init_glfw();
 
 	// Initialize glslang
 	init_glslang();
@@ -908,10 +925,6 @@ int main() {
 		system("pause");
 		exit(-1);
 	}
-
-	// Window creation
-	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API); // Not using OpenGL so no need to create context
-	GLFWwindow* window = glfwCreateWindow(WIDTH, HEIGHT, "instance", nullptr, nullptr);
 
 	// Create Vulkan surface
 	VkInstance native_instance = instance;
@@ -2028,6 +2041,7 @@ int main() {
 	}
 
 	// Render Loop
+	quit = false;
 	do {
 		glm::vec3 camera_pos = glm::vec3(1.0f, 1.0f, 2.0f);
 		glm::vec3 camera_target = glm::vec3(0.0f, 0.0f, 0.0f);
@@ -2194,7 +2208,7 @@ int main() {
 			system("pause");
 			exit(-1);
 		}
-	} while (1);
+	} while (!quit);
 
 	if (glfwWindowShouldClose(window)) {
 		glfwDestroyWindow(window);
