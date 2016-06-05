@@ -558,6 +558,31 @@ vk::RenderPass create_render_pass(const vk::Device& device, const vk::Format& co
 
 	return render_pass;
 }
+
+// Update buffer memory
+void update_buffer(vk::Device device, vk::DeviceMemory buffer_device_memory, void* src, size_t size) {
+	void* buffer_mapped_memory;
+	try {
+		buffer_mapped_memory = device.mapMemory(buffer_device_memory, 0, size, vk::MemoryMapFlags());
+	}
+	catch (const std::system_error& e) {
+		fprintf(stderr, "Vulkan failure: %s\n", e.what());
+		system("pause");
+		exit(-1);
+	}
+
+	memcpy(buffer_mapped_memory, src, size);
+
+	try {
+		device.unmapMemory(buffer_device_memory);
+	}
+	catch (const std::system_error& e) {
+		fprintf(stderr, "Vulkan failure: %s\n", e.what());
+		system("pause");
+		exit(-1);
+	}
+}
+
 // Create Shader Modules
 
 
@@ -777,7 +802,7 @@ std::vector<vertex> test_cube_solid() {
 	std::random_device rd;
 	std::default_random_engine gen(rd());
 	std::uniform_real_distribution<> dis(0, 1);
-	float4 col = { dis(gen), dis(gen), dis(gen), 1.0f };
+	float4 col = { (float)dis(gen), (float)dis(gen), (float)dis(gen), 1.0f };
 
 	float mag = 0.7f;
 
@@ -1654,26 +1679,7 @@ int main() {
 		exit(-1);
 	}
 
-	void* uniform_buffer_mapped_memory;
-	try {
-		uniform_buffer_mapped_memory = device.mapMemory(uniform_buffer_device_memory, 0, sizeof(uboVS), vk::MemoryMapFlags());
-	}
-	catch (const std::system_error& e) {
-		fprintf(stderr, "Vulkan failure: %s\n", e.what());
-		system("pause");
-		exit(-1);
-	}
-
-	memcpy(uniform_buffer_mapped_memory, &uboVS, sizeof(uboVS));
-
-	try {
-		device.unmapMemory(uniform_buffer_device_memory);
-	}
-	catch (const std::system_error& e) {
-		fprintf(stderr, "Vulkan failure: %s\n", e.what());
-		system("pause");
-		exit(-1);
-	}
+	update_buffer(device, uniform_buffer_device_memory, &uboVS, sizeof(uboVS));
 
 	try {
 		device.bindBufferMemory(uniform_buffer, uniform_buffer_device_memory, 0);
@@ -1786,26 +1792,7 @@ int main() {
 		exit(-1);
 	}
 
-	void* vertex_buffer_mapped_memory;
-	try {
-		vertex_buffer_mapped_memory = device.mapMemory(vertex_buffer_device_memory, 0, vertices.size() * sizeof(vertices.front()), vk::MemoryMapFlags());
-	}
-	catch (const std::system_error& e) {
-		fprintf(stderr, "Vulkan failure: %s\n", e.what());
-		system("pause");
-		exit(-1);
-	}
-
-	memcpy(vertex_buffer_mapped_memory, vertices.data(), vertices.size() * sizeof(vertices.front()));
-	
-	try {
-		device.unmapMemory(vertex_buffer_device_memory);
-	}
-	catch (const std::system_error& e) {
-		fprintf(stderr, "Vulkan failure: %s\n", e.what());
-		system("pause");
-		exit(-1);
-	}
+	update_buffer(device, vertex_buffer_device_memory, vertices.data(), vertices.size() * sizeof(vertices.at(0)));
 
 	try {
 		device.bindBufferMemory(vertex_buffer, vertex_buffer_device_memory, 0);
@@ -2051,109 +2038,27 @@ int main() {
 
 		// GLFW Input Handling
 		glfwPollEvents();
+//TODO: Move the following functions to a GLFW key callback
 		if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
 			glfwSetWindowShouldClose(window, 1);
-			break;
+			quit = true;
 		}
-//TODO: Move the following functions to a GLFW key callback
 		else if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS) {
 			uboVS.model_matrix = glm::rotate(0.0004f, glm::vec3(0.0f, 1.0f, 0.0f)) * uboVS.model_matrix;
-
-			void* uniform_buffer_mapped_memory;
-			try {
-				uniform_buffer_mapped_memory = device.mapMemory(uniform_buffer_device_memory, 0, sizeof(uboVS), vk::MemoryMapFlags());
-			}
-			catch (const std::system_error& e) {
-				fprintf(stderr, "Vulkan failure: %s\n", e.what());
-				system("pause");
-				exit(-1);
-			}
-
-			memcpy(uniform_buffer_mapped_memory, &uboVS, sizeof(uboVS));
-
-			try {
-				device.unmapMemory(uniform_buffer_device_memory);
-			}
-			catch (const std::system_error& e) {
-				fprintf(stderr, "Vulkan failure: %s\n", e.what());
-				system("pause");
-				exit(-1);
-			}
+			update_buffer(device, uniform_buffer_device_memory, &uboVS, sizeof(uboVS));
 		}
 		else if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS) {
 			uboVS.model_matrix = glm::rotate(-0.0004f, glm::vec3(0.0f, 1.0f, 0.0f)) * uboVS.model_matrix;
-
-			void* uniform_buffer_mapped_memory;
-			try {
-				uniform_buffer_mapped_memory = device.mapMemory(uniform_buffer_device_memory, 0, sizeof(uboVS), vk::MemoryMapFlags());
-			}
-			catch (const std::system_error& e) {
-				fprintf(stderr, "Vulkan failure: %s\n", e.what());
-				system("pause");
-				exit(-1);
-			}
-
-			memcpy(uniform_buffer_mapped_memory, &uboVS, sizeof(uboVS));
-
-			try {
-				device.unmapMemory(uniform_buffer_device_memory);
-			}
-			catch (const std::system_error& e) {
-				fprintf(stderr, "Vulkan failure: %s\n", e.what());
-				system("pause");
-				exit(-1);
-			}
+			update_buffer(device, uniform_buffer_device_memory, &uboVS, sizeof(uboVS));
 		}
 		else if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS) {
 			uboVS.model_matrix = glm::rotate(-0.0004f, camera_right) * uboVS.model_matrix;
-
-			void* uniform_buffer_mapped_memory;
-			try {
-				uniform_buffer_mapped_memory = device.mapMemory(uniform_buffer_device_memory, 0, sizeof(uboVS), vk::MemoryMapFlags());
-			}
-			catch (const std::system_error& e) {
-				fprintf(stderr, "Vulkan failure: %s\n", e.what());
-				system("pause");
-				exit(-1);
-			}
-
-			memcpy(uniform_buffer_mapped_memory, &uboVS, sizeof(uboVS));
-
-			try {
-				device.unmapMemory(uniform_buffer_device_memory);
-			}
-			catch (const std::system_error& e) {
-				fprintf(stderr, "Vulkan failure: %s\n", e.what());
-				system("pause");
-				exit(-1);
-			}
+			update_buffer(device, uniform_buffer_device_memory, &uboVS, sizeof(uboVS));
 		}
 		else if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS) {
 			uboVS.model_matrix = glm::rotate(0.0004f, camera_right) * uboVS.model_matrix;
-
-			void* uniform_buffer_mapped_memory;
-			try {
-				uniform_buffer_mapped_memory = device.mapMemory(uniform_buffer_device_memory, 0, sizeof(uboVS), vk::MemoryMapFlags());
-			}
-			catch (const std::system_error& e) {
-				fprintf(stderr, "Vulkan failure: %s\n", e.what());
-				system("pause");
-				exit(-1);
-			}
-
-			memcpy(uniform_buffer_mapped_memory, &uboVS, sizeof(uboVS));
-
-			try {
-				device.unmapMemory(uniform_buffer_device_memory);
-			}
-			catch (const std::system_error& e) {
-				fprintf(stderr, "Vulkan failure: %s\n", e.what());
-				system("pause");
-				exit(-1);
-			}
+			update_buffer(device, uniform_buffer_device_memory, &uboVS, sizeof(uboVS));
 		}
-
-		
 
 		// Get next swapchain image
 		uint32_t next_image;
