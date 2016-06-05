@@ -2028,6 +2028,7 @@ int main() {
 		// GLFW Input Handling
 		glfwPollEvents();
 		if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
+			glfwSetWindowShouldClose(window, 1);
 			break;
 		}
 //TODO: Move the following functions to a GLFW key callback
@@ -2184,6 +2185,10 @@ int main() {
 			exit(-1);
 		}
 	} while (1);
+
+	if (glfwWindowShouldClose(window)) {
+		glfwDestroyWindow(window);
+	}
 
 	// Wait for user before closing
 	system("pause");
