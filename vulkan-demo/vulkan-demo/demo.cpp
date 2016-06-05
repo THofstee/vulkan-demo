@@ -26,6 +26,16 @@
 #define HEIGHT 480
 #define VSYNC false
 
+// I don't want windows.h
+#ifndef DWORD
+typedef unsigned long DWORD;
+#endif
+
+// Use the NVIDIA GPU if the system has Optimus
+extern "C" {
+	_declspec(dllexport) DWORD NvOptimusEnablement = 0x00000001;
+}
+
 /*****************************************************************************
 * DEBUG
 *****************************************************************************/
