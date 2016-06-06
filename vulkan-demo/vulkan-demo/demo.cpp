@@ -901,32 +901,23 @@ std::vector<vertex> test_cube_solid() {
 
 }
 
-/*****************************************************************************
-* MAIN FUNCTION
-*****************************************************************************/
-
-int main() {
-	// Vertices
+// Use TinyObjLoader to load .obj files
+std::vector<vertex> load_obj(const char* inputfile, const char* mtldir) {
 	std::vector<vertex> vertices;
-	// Test vertices
-	//vertices = test_quad();
 
-	// TinyObjLoader
-	std::string inputfile = "../meshes/cube/cube.obj";
-	std::string mtldir = "../meshes/cube/";
 	std::vector<tinyobj::shape_t> shapes;
 	std::vector<tinyobj::material_t> materials;
 
 	std::string err;
-	bool ret = tinyobj::LoadObj(shapes, materials, err, inputfile.c_str(), mtldir.c_str(), tinyobj::triangulation | tinyobj::calculate_normals);
+	bool ret = tinyobj::LoadObj(shapes, materials, err, inputfile, mtldir, tinyobj::triangulation | tinyobj::calculate_normals);
 
 	if (!err.empty()) {
-	fprintf(stderr, "%s\n", err.c_str());
+		fprintf(stderr, "%s\n", err.c_str());
 	}
 	if (!ret) {
-	fprintf(stderr, "tinyobjloader failed to load obj\n");
-	system("pause");
-	exit(-1);
+		fprintf(stderr, "tinyobjloader failed to load obj\n");
+		system("pause");
+		exit(-1);
 	}
 
 	printf("Num shapes:    %llu\n", shapes.size());
@@ -937,36 +928,176 @@ int main() {
 	std::uniform_real_distribution<> dis(0, 1);
 
 	for (size_t i = 0; i < shapes.size(); i++) {
-	printf("shape[%llu].name = %s\n", i, shapes[i].name.c_str());
-	printf("Size of shape[%llu].indices: %llu\n", i, shapes[i].mesh.indices.size());
-	printf("Size of shape[%llu].material_ids: %llu\n", i, shapes[i].mesh.material_ids.size());
-	printf("shape[%llu].vertices: %llu\n", i, shapes[i].mesh.positions.size());
-	printf("shape[%llu].texcoords: %llu\n", i, shapes[i].mesh.texcoords.size());
+		printf("shape[%llu].name = %s\n", i, shapes[i].name.c_str());
+		printf("Size of shape[%llu].indices: %llu\n", i, shapes[i].mesh.indices.size());
+		printf("Size of shape[%llu].material_ids: %llu\n", i, shapes[i].mesh.material_ids.size());
+		printf("shape[%llu].vertices: %llu\n", i, shapes[i].mesh.positions.size());
+		printf("shape[%llu].texcoords: %llu\n", i, shapes[i].mesh.texcoords.size());
 
-	size_t indexOffset = 0;
-	for (size_t n = 0; n < shapes[i].mesh.num_vertices.size(); n++) {
-	for (size_t f = 0; f < shapes[i].mesh.num_vertices[n]; f++) {
-	unsigned int v = shapes[i].mesh.indices[indexOffset + f];
+		size_t indexOffset = 0;
+		for (size_t n = 0; n < shapes[i].mesh.num_vertices.size(); n++) {
+			for (size_t f = 0; f < shapes[i].mesh.num_vertices[n]; f++) {
+				unsigned int v = shapes[i].mesh.indices[indexOffset + f];
 
-	float Kd[3] = { 1 };
-	if (shapes[i].mesh.material_ids[n] >= 0) {
-	memcpy(&Kd[0], &materials[shapes[i].mesh.material_ids[n]].diffuse[0], 3*sizeof(float));
-	}
+				float Kd[3] = { 1 };
+				if (shapes[i].mesh.material_ids[n] >= 0) {
+					memcpy(&Kd[0], &materials[shapes[i].mesh.material_ids[n]].diffuse[0], 3 * sizeof(float));
+				}
 
-	vertices.push_back({
-	{ shapes.at(i).mesh.positions[3 * v + 0], shapes.at(i).mesh.positions[3 * v + 1], shapes.at(i).mesh.positions[3 * v + 2] },
-	{ Kd[0], Kd[1], Kd[2], 1.0f },
-	{ shapes.at(i).mesh.normals[3 * v + 0], shapes.at(i).mesh.normals[3 * v + 1], shapes.at(i).mesh.normals[3 * v + 2] },
-	{ shapes.at(i).mesh.texcoords[2 * v + 0], shapes.at(i).mesh.texcoords[2 * v + 1] }
-	});
-	}
+				vertices.push_back({
+					{ shapes.at(i).mesh.positions[3 * v + 0], shapes.at(i).mesh.positions[3 * v + 1], shapes.at(i).mesh.positions[3 * v + 2] },
+					{ Kd[0], Kd[1], Kd[2], 1.0f },
+					{ shapes.at(i).mesh.normals[3 * v + 0], shapes.at(i).mesh.normals[3 * v + 1], shapes.at(i).mesh.normals[3 * v + 2] },
+					{ shapes.at(i).mesh.texcoords[2 * v + 0], shapes.at(i).mesh.texcoords[2 * v + 1] }
+				});
+			}
 
-	indexOffset += shapes[i].mesh.num_vertices[n];
-	}
+			indexOffset += shapes[i].mesh.num_vertices[n];
+		}
 	}
 
 
 	printf("\n---\n\n");
+
+	return vertices;
+}
+
+// Read vertex data from vtx file
+#include <fstream>
+enum class VertexDataType
+{
+	Half, Float, Char, UChar, Short, UShort, Int,
+	UInt4_10_10_10_2
+};
+struct vertexAttribute {
+	std::wstring name;
+	VertexDataType type;
+	int components;
+	bool normalized;
+};
+std::vector<vertex> load_vtx(const char* inputfile) {
+	std::vector<vertex> vertices;
+
+	std::ifstream fin(inputfile, std::ifstream::binary);
+
+	// Read bounding box
+	float3 min, max;
+	fin.read((char*)&min.x, sizeof(float));
+	fin.read((char*)&min.y, sizeof(float));
+	fin.read((char*)&min.z, sizeof(float));
+	fin.read((char*)&max.x, sizeof(float));
+	fin.read((char*)&max.y, sizeof(float));
+	fin.read((char*)&max.z, sizeof(float));
+
+	printf("Bounds:\tmin: { %.2f, %.2f, %.2f }\n\tmax: { %.2f, %.2f, %.2f }\n", min.x, min.y, min.z, max.x, max.y, max.z);
+
+	// Read attributes
+	uint32_t attributes;
+	fin.read((char*)&attributes, sizeof(uint32_t));
+	printf("Attributes: %u\n", attributes);
+
+	std::vector<vertexAttribute> vattrs;
+	for (int i = 0; i < attributes; i++) {
+		vertexAttribute vattr;
+		uint32_t name_len;
+		fin.read((char*)&name_len, sizeof(uint32_t));
+		wchar_t* cname = new wchar_t[name_len+1];
+		char comp;
+		bool norm;
+		uint16_t type;
+
+		fin.read((char*)cname, name_len * sizeof(wchar_t));
+		cname[name_len] = '\0';
+		fin.read((char*)&comp, sizeof(char));
+		fin.read((char*)&norm, sizeof(bool));
+		fin.read((char*)&type, sizeof(uint16_t));
+
+		vattr.name = cname;
+		vattr.components = comp;
+		vattr.normalized = norm != 0;
+		vattr.type = (VertexDataType)type;
+		
+		printf("name_len: %u\n", name_len);
+		printf("name:"); wprintf(vattr.name.c_str()); printf("\n");
+		printf("comp: %d\n", vattr.components);
+		printf("norm: %d\n", vattr.normalized);
+		printf("type: %d\n", vattr.type);
+
+		vattrs.push_back(vattr);
+	}
+
+	int32_t vertSize; fin.read((char*)&vertSize, sizeof(int32_t));
+	printf("vert size: %d\n", vertSize);
+
+	while (fin.good()) {
+		float3 pos;
+		float3 norm;
+		float2 tex;
+		float4 col = { 1.0f, 1.0f, 1.0f, 1.0f };
+
+		for (int k = 0; k < vattrs.size(); k++) {
+			if (vattrs.at(k).name == L"vert_position") {
+				if (vattrs.at(k).components >= 3) {
+					fin.read((char*)&pos.x, 3 * sizeof(float));
+				}
+				else {
+					fprintf(stderr, "vtx loader: file format is incompatible\n");
+					exit(-1);
+				}
+
+				if (vattrs.at(k).components > 3) {
+					fin.ignore((vattrs.at(k).components - 3) * sizeof(float));
+				}
+			}
+			else if (vattrs.at(k).name == L"vert_normal") {
+				if (vattrs.at(k).components >= 3) {
+					fin.read((char*)&norm.x, 3 * sizeof(float));
+				}
+				else {
+					fprintf(stderr, "vtx loader: file format is incompatible\n");
+					exit(-1);
+				}
+
+				if (vattrs.at(k).components > 3) {
+					fin.ignore((vattrs.at(k).components - 3) * sizeof(float));
+				}
+			}
+			else if (vattrs.at(k).name == L"vert_texCoord0") {
+				if (vattrs.at(k).components >= 2) {
+					fin.read((char*)&tex.u, 2 * sizeof(float));
+				}
+				else {
+					fprintf(stderr, "vtx loader: file format is incompatible\n");
+					exit(-1);
+				}
+
+				if (vattrs.at(k).components > 2) {
+					fin.ignore((vattrs.at(k).components - 2) * sizeof(float));
+				}
+			}
+			else {
+				fin.ignore((vattrs.at(k).components) * sizeof(float));
+			}
+		}
+
+		vertices.push_back({ pos, col, norm, tex });
+	}
+
+	printf("\n---\n\n");
+
+	return vertices;
+}
+
+/*****************************************************************************
+* MAIN FUNCTION
+*****************************************************************************/
+
+int main() {
+	// Vertices
+	std::vector<vertex> vertices;
+	//vertices = test_quad();
+	//vertices = load_obj("../meshes/cube/cube.obj", "../meshes/cube/");
+	vertices = load_vtx("../meshes/couch/couch.vtx");
 
 	// Uniforms
 	struct {
@@ -977,7 +1108,8 @@ int main() {
 
 	uboVS.projection_matrix = glm::scale(glm::vec3(1, -1, 1)) * glm::perspective(glm::radians(60.0f), (float)WIDTH / (float)HEIGHT, 1.0f, 512.0f);
 	//uboVS.view_matrix = glm::lookAt(glm::vec3(0, 100, 250), glm::vec3(0, 100, 0), glm::vec3(0, 1, 0)); //sackboy
-	uboVS.view_matrix = glm::lookAt(glm::vec3(0, 0, 2), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0));
+	//uboVS.view_matrix = glm::lookAt(glm::vec3(0, 0, 2), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0)); //cube
+	uboVS.view_matrix = glm::lookAt(glm::vec3(-90, 50, 0), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0)); //couch
 	uboVS.model_matrix = glm::mat4();
 
 	// Initialize GLFW
@@ -1534,7 +1666,7 @@ int main() {
 	size_t num_textures = 2;
 	std::vector<vk::DescriptorPoolSize> descriptor_pool_sizes;
 	descriptor_pool_sizes.push_back(vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, 1));
-	descriptor_pool_sizes.push_back(vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, num_textures));
+	descriptor_pool_sizes.push_back(vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, (uint32_t)num_textures));
 
 	vk::DescriptorPoolCreateInfo descriptor_pool_create_info(
 		vk::DescriptorPoolCreateFlags(),
@@ -1984,7 +2116,7 @@ int main() {
 			descriptor_sets.at(0),
 			1,
 			0,
-			texture_descriptors.size(),
+			(uint32_t)texture_descriptors.size(),
 			vk::DescriptorType::eCombinedImageSampler,
 			texture_descriptors.data(),
 			nullptr,
