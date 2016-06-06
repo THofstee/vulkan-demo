@@ -63,6 +63,7 @@ bool quit;
 // GLFW Error Callback
 void error_callback(int error, const char* description)
 {
+	(void)error;
 	fprintf(stderr, "%s\n", description);
 }
 
@@ -298,6 +299,7 @@ typename std::vector<unsigned int, Allocator> GLSLtoSPV(const vk::ShaderStageFla
 // GLFW Window Close Callback
 void winclose_callback(GLFWwindow* window)
 {
+	(void)window;
 	quit = true;
 }
 
@@ -889,10 +891,10 @@ int main() {
 	std::uniform_real_distribution<> dis(0, 1);
 
 	for (size_t i = 0; i < shapes.size(); i++) {
-		printf("shape[%ld].name = %s\n", i, shapes[i].name.c_str());
-		printf("Size of shape[%ld].indices: %ld\n", i, shapes[i].mesh.indices.size());
-		printf("Size of shape[%ld].material_ids: %ld\n", i, shapes[i].mesh.material_ids.size());
-		printf("shape[%ld].vertices: %ld\n", i, shapes[i].mesh.positions.size());
+		printf("shape[%llu].name = %s\n", i, shapes[i].name.c_str());
+		printf("Size of shape[%llu].indices: %llu\n", i, shapes[i].mesh.indices.size());
+		printf("Size of shape[%llu].material_ids: %llu\n", i, shapes[i].mesh.material_ids.size());
+		printf("shape[%llu].vertices: %llu\n", i, shapes[i].mesh.positions.size());
 
 		size_t indexOffset = 0;
 		for (size_t n = 0; n < shapes[i].mesh.num_vertices.size(); n++) {
@@ -1419,7 +1421,7 @@ int main() {
 		VK_FALSE,
 		VK_FALSE,
 		vk::PolygonMode::eFill,
-		vk::CullModeFlags(vk::CullModeFlagBits::eNone),
+		vk::CullModeFlags(vk::CullModeFlagBits::eBack),
 		vk::FrontFace::eCounterClockwise,
 		VK_FALSE,
 		0.0f,
