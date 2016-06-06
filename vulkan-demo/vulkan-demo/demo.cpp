@@ -19,6 +19,9 @@
 #include <glm/gtx/transform.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+
 #define DEBUG true
 #define DEBUG_CLEANUP true
 
@@ -89,6 +92,10 @@ std::vector<VkDebugReportCallbackEXT> callbacks;
 * STRUCTS/CLASSES
 ******************************************************************************/
 
+struct float2 {
+	float u, v;
+};
+
 struct float3 {
 	float x, y, z;
 };
@@ -101,6 +108,7 @@ struct vertex {
 	float3 pos;
 	float4 col;
 	float3 norm;
+	float2 tex;
 };
 
 /*****************************************************************************
@@ -114,8 +122,10 @@ R"vertexShader(
 layout(location = 0) in vec3 pos;
 layout(location = 1) in vec4 col;
 layout(location = 2) in vec3 norm;
+layout(location = 3) in vec2 tex;
 
 layout(location = 1) out vec4 Col;
+layout(location = 3) out vec2 Tex;
 
 layout(binding = 0) uniform UBO
 {
@@ -127,6 +137,7 @@ layout(binding = 0) uniform UBO
 void main() {
 	vec3 lightdir = normalize(vec3(-.3, -.4, -.6));
 	Col = col * clamp(dot((ubo.model * vec4(norm, 1.0)).xyz, -lightdir), 0.0, 1.0);
+	Tex = tex;
 	gl_Position = ubo.proj * ubo.view * ubo.model * vec4(pos, 1.0);
 }
 )vertexShader";
@@ -136,11 +147,14 @@ R"fragmentShader(
 #version 440
 
 layout(location = 1) in vec4 col;
+layout(location = 3) in vec2 texcoord;
 
 layout(location = 0) out vec4 out_Color;
 
+layout(binding = 1) uniform sampler2D tex;
+
 void main() {
-  out_Color = col;
+  out_Color = texture(tex, texcoord) * col;
 }
 )fragmentShader";
 
@@ -356,7 +370,7 @@ void create_callbacks(const vk::Instance& instance) {
 	);
 
 	VkDebugReportCallbackEXT callback;
-//TODO: See if this can be wrapped in VKCPP again, if not do error checking
+	//TODO: See if this can be wrapped in VKCPP again, if not do error checking
 	VkResult result = vkCreateDebugReportCallbackEXT(instance, &(VkDebugReportCallbackCreateInfoEXT)callbackCreateInfo, nullptr, &callback);
 	callbacks.push_back(callback);
 	//instance.createDebugReportCallbackEXT(callbackCreateInfo);
@@ -562,10 +576,10 @@ vk::RenderPass create_render_pass(const vk::Device& device, const vk::Format& co
 }
 
 // Update buffer memory
-void update_buffer(vk::Device device, vk::DeviceMemory buffer_device_memory, void* src, size_t size) {
-	void* buffer_mapped_memory;
+void update_memory(vk::Device device, vk::DeviceMemory device_memory, void* src, size_t size) {
+	void* device_mapped_memory;
 	try {
-		buffer_mapped_memory = device.mapMemory(buffer_device_memory, 0, size, vk::MemoryMapFlags());
+		device_mapped_memory = device.mapMemory(device_memory, 0, size, vk::MemoryMapFlags());
 	}
 	catch (const std::system_error& e) {
 		fprintf(stderr, "Vulkan failure: %s\n", e.what());
@@ -573,16 +587,34 @@ void update_buffer(vk::Device device, vk::DeviceMemory buffer_device_memory, voi
 		exit(-1);
 	}
 
-	memcpy(buffer_mapped_memory, src, size);
+	memcpy(device_mapped_memory, src, size);
 
 	try {
-		device.unmapMemory(buffer_device_memory);
+		device.unmapMemory(device_memory);
 	}
 	catch (const std::system_error& e) {
 		fprintf(stderr, "Vulkan failure: %s\n", e.what());
 		system("pause");
 		exit(-1);
 	}
+}
+
+uint32_t get_memory_type(vk::PhysicalDevice physical_device, uint32_t memory_type_bits, vk::MemoryPropertyFlags memory_property_flags) {
+	uint32_t memory_type_index = 0;
+
+	for (uint32_t k = 0; k < 32; k++) {
+		if ((memory_type_bits & 1) == 1) {
+			if ((physical_device.getMemoryProperties().memoryTypes[k].propertyFlags & memory_property_flags) == memory_property_flags) {
+				memory_type_index = k;
+				return memory_type_index;
+			}
+		}
+
+		memory_type_bits >>= 1;
+	}
+
+	fprintf(stderr, "Couldn't find any matching memory types.\n");
+	exit(-1);
 }
 
 // Create Shader Modules
@@ -613,6 +645,7 @@ void print_device_info(const std::vector<vk::PhysicalDevice>& physicalDevices) {
 		printf("Supported Features:\n");
 		vk::PhysicalDeviceFeatures deviceFeatures = physicalDevices.at(i).getFeatures();
 		if (deviceFeatures.shaderClipDistance == VK_TRUE) printf("Shader Clip Distance\n");
+		if (deviceFeatures.textureCompressionBC == VK_TRUE) printf("BC Texture Compression\n");
 
 		printf("\n");
 
@@ -663,27 +696,39 @@ void print_surface_capabilities(const vk::PhysicalDevice& physical_device, const
 * VERTEX TEST FUNCTIONS
 ******************************************************************************/
 
+// Generates a quad
+std::vector<vertex> test_quad() {
+	return{
+		{ { -1.0f, -1.0f, 0.0f },{ 1.0f, 1.0f, 1.0f, 1.0f },{ 0.0f, 0.0f, 1.0f },{ 0.0f, 0.0f } },
+		{ { 1.0f, -1.0f, 0.0f },{ 1.0f, 1.0f, 1.0f, 1.0f },{ 0.0f, 0.0f, 1.0f },{ 1.0f, 0.0f } },
+		{ { -1.0f,  1.0f, 0.0f },{ 1.0f, 1.0f, 1.0f, 1.0f },{ 0.0f, 0.0f, 1.0f },{ 0.0f, 1.0f } },
+		{ { -1.0f,  1.0f, 0.0f },{ 1.0f, 1.0f, 1.0f, 1.0f },{ 0.0f, 0.0f, 1.0f },{ 0.0f, 1.0f } },
+		{ { 1.0f, -1.0f, 0.0f },{ 1.0f, 1.0f, 1.0f, 1.0f },{ 0.0f, 0.0f, 1.0f },{ 1.0f, 0.0f } },
+		{ { 1.0f,  1.0f, 0.0f },{ 1.0f, 1.0f, 1.0f, 1.0f },{ 0.0f, 0.0f, 1.0f },{ 1.0f, 1.0f } }
+	};
+}
+
 // Generates a triangle
 std::vector<vertex> test_triangle() {
 	return{
-		{ { -0.8f,  0.8f, -2.0f },{ 1.0f, 1.0f, 0.0f, 1.0f },{ 0.0f, 0.0f, 1.0f } },
-		{ {  0.7f,  0.7f, -2.0f },{ 0.0f, 1.0f, 1.0f, 1.0f },{ 0.0f, 0.0f, 1.0f } },
-		{ { -0.7f, -0.7f, -2.0f },{ 1.0f, 0.0f, 1.0f, 1.0f },{ 0.0f, 0.0f, 1.0f } }
+		{ { -0.8f,  0.8f, -2.0f },{ 1.0f, 1.0f, 0.0f, 1.0f },{ 0.0f, 0.0f, 1.0f },{ 0.0f, 0.0f } },
+		{ { 0.7f,  0.7f, -2.0f },{ 0.0f, 1.0f, 1.0f, 1.0f },{ 0.0f, 0.0f, 1.0f },{ 0.0f, 0.0f } },
+		{ { -0.7f, -0.7f, -2.0f },{ 1.0f, 0.0f, 1.0f, 1.0f },{ 0.0f, 0.0f, 1.0f },{ 0.0f, 0.0f } }
 	};
 }
 
 // Generates a set of vertices to test zbuffer
 std::vector<vertex> test_zbuffer() {
-	return {
-		{ { -0.7f,  0.7f,  0.0f },{ 1.0f, 1.0f, 0.0f, 1.0f },{ 0.0f, 0.0f, 1.0f} },
-		{ {  0.7f,  0.7f,  0.0f },{ 0.0f, 1.0f, 1.0f, 1.0f },{ 0.0f, 0.0f, 1.0f } },
-		{ { -0.7f, -0.7f,  0.0f },{ 1.0f, 0.0f, 1.0f, 1.0f },{ 0.0f, 0.0f, 1.0f } },
-		{ { -0.7f, -0.7f,  0.0f },{ 1.0f, 0.0f, 1.0f, 1.0f },{ 0.0f, 0.0f, 1.0f } },
-		{ {  0.7f,  0.7f,  0.0f },{ 0.0f, 1.0f, 1.0f, 1.0f },{ 0.0f, 0.0f, 1.0f } },
-		{ {  0.7f, -0.7f,  0.0f },{ 1.0f, 1.0f, 0.0f, 1.0f },{ 0.0f, 0.0f, 1.0f } },
-		{ {  0.7f, -0.7f, -1.0f },{ 0.0f, 0.0f, 1.0f, 1.0f },{ 0.0f, 0.0f, 1.0f } }, //these normals
-		{ { -0.7f,  0.7f, -1.0f },{ 0.0f, 0.0f, 1.0f, 1.0f },{ 0.0f, 0.0f, 1.0f } }, //are actually
-		{ {  0.7f,  0.7f,  1.0f },{ 0.0f, 0.0f, 1.0f, 1.0f },{ 0.0f, 0.0f, 1.0f } }  //wrong.
+	return{
+		{ { -0.7f,  0.7f,  0.0f },{ 1.0f, 1.0f, 0.0f, 1.0f },{ 0.0f, 0.0f, 1.0f },{ 0.0f, 0.0f } },
+		{ { 0.7f,  0.7f,  0.0f },{ 0.0f, 1.0f, 1.0f, 1.0f },{ 0.0f, 0.0f, 1.0f },{ 0.0f, 0.0f } },
+		{ { -0.7f, -0.7f,  0.0f },{ 1.0f, 0.0f, 1.0f, 1.0f },{ 0.0f, 0.0f, 1.0f },{ 0.0f, 0.0f } },
+		{ { -0.7f, -0.7f,  0.0f },{ 1.0f, 0.0f, 1.0f, 1.0f },{ 0.0f, 0.0f, 1.0f },{ 0.0f, 0.0f } },
+		{ { 0.7f,  0.7f,  0.0f },{ 0.0f, 1.0f, 1.0f, 1.0f },{ 0.0f, 0.0f, 1.0f },{ 0.0f, 0.0f } },
+		{ { 0.7f, -0.7f,  0.0f },{ 1.0f, 1.0f, 0.0f, 1.0f },{ 0.0f, 0.0f, 1.0f },{ 0.0f, 0.0f } },
+		{ { 0.7f, -0.7f, -1.0f },{ 0.0f, 0.0f, 1.0f, 1.0f },{ 0.0f, 0.0f, 1.0f },{ 0.0f, 0.0f } }, //these normals
+		{ { -0.7f,  0.7f, -1.0f },{ 0.0f, 0.0f, 1.0f, 1.0f },{ 0.0f, 0.0f, 1.0f },{ 0.0f, 0.0f } }, //are actually
+		{ { 0.7f,  0.7f,  1.0f },{ 0.0f, 0.0f, 1.0f, 1.0f },{ 0.0f, 0.0f, 1.0f },{ 0.0f, 0.0f } }  //wrong.
 	};
 }
 
@@ -693,31 +738,31 @@ std::vector<vertex> test_zbuffer_rc() {
 	std::default_random_engine gen(rd());
 	std::uniform_real_distribution<> dis(0, 1);
 
-	return {
-		{ { -0.7f,  0.7f,  0.0f },{ (float)dis(gen), (float)dis(gen), (float)dis(gen), 1.0f },{ 0.0f, 0.0f, 1.0f } },
-		{ {  0.7f,  0.7f,  0.0f },{ (float)dis(gen), (float)dis(gen), (float)dis(gen), 1.0f },{ 0.0f, 0.0f, 1.0f } },
-		{ { -0.7f, -0.7f,  0.0f },{ (float)dis(gen), (float)dis(gen), (float)dis(gen), 1.0f },{ 0.0f, 0.0f, 1.0f } },
-		{ { -0.7f, -0.7f,  0.0f },{ (float)dis(gen), (float)dis(gen), (float)dis(gen), 1.0f },{ 0.0f, 0.0f, 1.0f } },
-		{ {  0.7f,  0.7f,  0.0f },{ (float)dis(gen), (float)dis(gen), (float)dis(gen), 1.0f },{ 0.0f, 0.0f, 1.0f } },
-		{ {  0.7f, -0.7f,  0.0f },{ (float)dis(gen), (float)dis(gen), (float)dis(gen), 1.0f },{ 0.0f, 0.0f, 1.0f } },
-		{ {  0.7f, -0.7f, -1.0f },{ (float)dis(gen), (float)dis(gen), (float)dis(gen), 1.0f },{ 0.0f, 0.0f, 1.0f } }, //these normals
-		{ { -0.7f,  0.7f, -1.0f },{ (float)dis(gen), (float)dis(gen), (float)dis(gen), 1.0f },{ 0.0f, 0.0f, 1.0f } }, //are actually
-		{ {  0.7f,  0.7f,  1.0f },{ (float)dis(gen), (float)dis(gen), (float)dis(gen), 1.0f },{ 0.0f, 0.0f, 1.0f } }  //wrong.
+	return{
+		{ { -0.7f,  0.7f,  0.0f },{ (float)dis(gen), (float)dis(gen), (float)dis(gen), 1.0f },{ 0.0f, 0.0f, 1.0f },{ 0.0f, 0.0f } },
+		{ { 0.7f,  0.7f,  0.0f },{ (float)dis(gen), (float)dis(gen), (float)dis(gen), 1.0f },{ 0.0f, 0.0f, 1.0f },{ 0.0f, 0.0f } },
+		{ { -0.7f, -0.7f,  0.0f },{ (float)dis(gen), (float)dis(gen), (float)dis(gen), 1.0f },{ 0.0f, 0.0f, 1.0f },{ 0.0f, 0.0f } },
+		{ { -0.7f, -0.7f,  0.0f },{ (float)dis(gen), (float)dis(gen), (float)dis(gen), 1.0f },{ 0.0f, 0.0f, 1.0f },{ 0.0f, 0.0f } },
+		{ { 0.7f,  0.7f,  0.0f },{ (float)dis(gen), (float)dis(gen), (float)dis(gen), 1.0f },{ 0.0f, 0.0f, 1.0f },{ 0.0f, 0.0f } },
+		{ { 0.7f, -0.7f,  0.0f },{ (float)dis(gen), (float)dis(gen), (float)dis(gen), 1.0f },{ 0.0f, 0.0f, 1.0f },{ 0.0f, 0.0f } },
+		{ { 0.7f, -0.7f, -1.0f },{ (float)dis(gen), (float)dis(gen), (float)dis(gen), 1.0f },{ 0.0f, 0.0f, 1.0f },{ 0.0f, 0.0f } }, //these normals
+		{ { -0.7f,  0.7f, -1.0f },{ (float)dis(gen), (float)dis(gen), (float)dis(gen), 1.0f },{ 0.0f, 0.0f, 1.0f },{ 0.0f, 0.0f } }, //are actually
+		{ { 0.7f,  0.7f,  1.0f },{ (float)dis(gen), (float)dis(gen), (float)dis(gen), 1.0f },{ 0.0f, 0.0f, 1.0f },{ 0.0f, 0.0f } }  //wrong.
 	};
 }
 
 // Test projection matrix
 std::vector<vertex> test_proj() {
-	return {
-		{ { -0.7f,  0.7f, -3.0f },{ 1.0f, 1.0f, 0.0f, 1.0f },{ 0.0f, 0.0f, 1.0f } },
-		{ {  0.7f,  0.7f, -3.0f },{ 0.0f, 1.0f, 1.0f, 1.0f },{ 0.0f, 0.0f, 1.0f } },
-		{ { -0.7f, -0.7f, -3.0f },{ 1.0f, 0.0f, 1.0f, 1.0f },{ 0.0f, 0.0f, 1.0f } },
-		{ { -0.7f, -0.7f, -3.0f },{ 1.0f, 0.0f, 1.0f, 1.0f },{ 0.0f, 0.0f, 1.0f } },
-		{ {  0.7f,  0.7f, -3.0f },{ 0.0f, 1.0f, 1.0f, 1.0f },{ 0.0f, 0.0f, 1.0f } },
-		{ {  0.7f, -0.7f, -3.0f },{ 1.0f, 1.0f, 0.0f, 1.0f },{ 0.0f, 0.0f, 1.0f } },
-		{ {  1.2f, -1.6f, -5.0f },{ 0.0f, 1.0f, 1.0f, 1.0f },{ 0.0f, 0.0f, 1.0f } }, //these normals
-		{ { -1.6f,  1.2f, -5.0f },{ 1.0f, 1.0f, 0.0f, 1.0f },{ 0.0f, 0.0f, 1.0f } }, //are acutally
-		{ {  0.3f,  0.3f, -2.0f },{ 1.0f, 0.0f, 1.0f, 1.0f },{ 0.0f, 0.0f, 1.0f } }  //wrong.
+	return{
+		{ { -0.7f,  0.7f, -3.0f },{ 1.0f, 1.0f, 0.0f, 1.0f },{ 0.0f, 0.0f, 1.0f },{ 0.0f, 0.0f } },
+		{ { 0.7f,  0.7f, -3.0f },{ 0.0f, 1.0f, 1.0f, 1.0f },{ 0.0f, 0.0f, 1.0f },{ 0.0f, 0.0f } },
+		{ { -0.7f, -0.7f, -3.0f },{ 1.0f, 0.0f, 1.0f, 1.0f },{ 0.0f, 0.0f, 1.0f },{ 0.0f, 0.0f } },
+		{ { -0.7f, -0.7f, -3.0f },{ 1.0f, 0.0f, 1.0f, 1.0f },{ 0.0f, 0.0f, 1.0f },{ 0.0f, 0.0f } },
+		{ { 0.7f,  0.7f, -3.0f },{ 0.0f, 1.0f, 1.0f, 1.0f },{ 0.0f, 0.0f, 1.0f },{ 0.0f, 0.0f } },
+		{ { 0.7f, -0.7f, -3.0f },{ 1.0f, 1.0f, 0.0f, 1.0f },{ 0.0f, 0.0f, 1.0f },{ 0.0f, 0.0f } },
+		{ { 1.2f, -1.6f, -5.0f },{ 0.0f, 1.0f, 1.0f, 1.0f },{ 0.0f, 0.0f, 1.0f },{ 0.0f, 0.0f } }, //these normals
+		{ { -1.6f,  1.2f, -5.0f },{ 1.0f, 1.0f, 0.0f, 1.0f },{ 0.0f, 0.0f, 1.0f },{ 0.0f, 0.0f } }, //are acutally
+		{ { 0.3f,  0.3f, -2.0f },{ 1.0f, 0.0f, 1.0f, 1.0f },{ 0.0f, 0.0f, 1.0f },{ 0.0f, 0.0f } }  //wrong.
 	};
 }
 
@@ -740,47 +785,47 @@ std::vector<vertex> test_cube() {
 
 	return{
 		//Front (red)
-		{ { -mag,  mag,  mag },{ 1.0f, 0.0f, 0.0f, 1.0f },{  0.0f,  0.0f,  1.0f } },
-		{ {  mag,  mag,  mag },{ 1.0f, 0.0f, 0.0f, 1.0f },{  0.0f,  0.0f,  1.0f } },
-		{ { -mag, -mag,  mag },{ 1.0f, 0.0f, 0.0f, 1.0f },{  0.0f,  0.0f,  1.0f } },
-		{ { -mag, -mag,  mag },{ 1.0f, 0.0f, 0.0f, 1.0f },{  0.0f,  0.0f,  1.0f } },
-		{ {  mag,  mag,  mag },{ 1.0f, 0.0f, 0.0f, 1.0f },{  0.0f,  0.0f,  1.0f } },
-		{ {  mag, -mag,  mag },{ 1.0f, 0.0f, 0.0f, 1.0f },{  0.0f,  0.0f,  1.0f } },
+		{ { -mag,  mag,  mag },{ 1.0f, 0.0f, 0.0f, 1.0f },{ 0.0f,  0.0f,  1.0f },{ 0.0f, 0.0f } },
+		{ { mag,  mag,  mag },{ 1.0f, 0.0f, 0.0f, 1.0f },{ 0.0f,  0.0f,  1.0f },{ 0.0f, 0.0f } },
+		{ { -mag, -mag,  mag },{ 1.0f, 0.0f, 0.0f, 1.0f },{ 0.0f,  0.0f,  1.0f },{ 0.0f, 0.0f } },
+		{ { -mag, -mag,  mag },{ 1.0f, 0.0f, 0.0f, 1.0f },{ 0.0f,  0.0f,  1.0f },{ 0.0f, 0.0f } },
+		{ { mag,  mag,  mag },{ 1.0f, 0.0f, 0.0f, 1.0f },{ 0.0f,  0.0f,  1.0f },{ 0.0f, 0.0f } },
+		{ { mag, -mag,  mag },{ 1.0f, 0.0f, 0.0f, 1.0f },{ 0.0f,  0.0f,  1.0f },{ 0.0f, 0.0f } },
 		//Left (green)
-		{ { -mag,  mag,  mag },{ 0.0f, 1.0f, 0.0f, 1.0f },{ -1.0f,  0.0f,  0.0f } },
-		{ { -mag, -mag,  mag },{ 0.0f, 1.0f, 0.0f, 1.0f },{ -1.0f,  0.0f,  0.0f } },
-		{ { -mag,  mag, -mag },{ 0.0f, 1.0f, 0.0f, 1.0f },{ -1.0f,  0.0f,  0.0f } },
-		{ { -mag, -mag,  mag },{ 0.0f, 1.0f, 0.0f, 1.0f },{ -1.0f,  0.0f,  0.0f } },
-		{ { -mag, -mag, -mag },{ 0.0f, 1.0f, 0.0f, 1.0f },{ -1.0f,  0.0f,  0.0f } },
-		{ { -mag,  mag, -mag },{ 0.0f, 1.0f, 0.0f, 1.0f },{ -1.0f,  0.0f,  0.0f } },
+		{ { -mag,  mag,  mag },{ 0.0f, 1.0f, 0.0f, 1.0f },{ -1.0f,  0.0f,  0.0f },{ 0.0f, 0.0f } },
+		{ { -mag, -mag,  mag },{ 0.0f, 1.0f, 0.0f, 1.0f },{ -1.0f,  0.0f,  0.0f },{ 0.0f, 0.0f } },
+		{ { -mag,  mag, -mag },{ 0.0f, 1.0f, 0.0f, 1.0f },{ -1.0f,  0.0f,  0.0f },{ 0.0f, 0.0f } },
+		{ { -mag, -mag,  mag },{ 0.0f, 1.0f, 0.0f, 1.0f },{ -1.0f,  0.0f,  0.0f },{ 0.0f, 0.0f } },
+		{ { -mag, -mag, -mag },{ 0.0f, 1.0f, 0.0f, 1.0f },{ -1.0f,  0.0f,  0.0f },{ 0.0f, 0.0f } },
+		{ { -mag,  mag, -mag },{ 0.0f, 1.0f, 0.0f, 1.0f },{ -1.0f,  0.0f,  0.0f },{ 0.0f, 0.0f } },
 		//Right (blue)
-		{ {  mag,  mag,  mag },{ 0.0f, 0.0f, 1.0f, 1.0f },{  1.0f,  0.0f,  0.0f } },
-		{ {  mag,  mag, -mag },{ 0.0f, 0.0f, 1.0f, 1.0f },{  1.0f,  0.0f,  0.0f } },
-		{ {  mag, -mag,  mag },{ 0.0f, 0.0f, 1.0f, 1.0f },{  1.0f,  0.0f,  0.0f } },
-		{ {  mag, -mag,  mag },{ 0.0f, 0.0f, 1.0f, 1.0f },{  1.0f,  0.0f,  0.0f } },
-		{ {  mag,  mag, -mag },{ 0.0f, 0.0f, 1.0f, 1.0f },{  1.0f,  0.0f,  0.0f } },
-		{ {  mag, -mag, -mag },{ 0.0f, 0.0f, 1.0f, 1.0f },{  1.0f,  0.0f,  0.0f } },
+		{ { mag,  mag,  mag },{ 0.0f, 0.0f, 1.0f, 1.0f },{ 1.0f,  0.0f,  0.0f },{ 0.0f, 0.0f } },
+		{ { mag,  mag, -mag },{ 0.0f, 0.0f, 1.0f, 1.0f },{ 1.0f,  0.0f,  0.0f },{ 0.0f, 0.0f } },
+		{ { mag, -mag,  mag },{ 0.0f, 0.0f, 1.0f, 1.0f },{ 1.0f,  0.0f,  0.0f },{ 0.0f, 0.0f } },
+		{ { mag, -mag,  mag },{ 0.0f, 0.0f, 1.0f, 1.0f },{ 1.0f,  0.0f,  0.0f },{ 0.0f, 0.0f } },
+		{ { mag,  mag, -mag },{ 0.0f, 0.0f, 1.0f, 1.0f },{ 1.0f,  0.0f,  0.0f },{ 0.0f, 0.0f } },
+		{ { mag, -mag, -mag },{ 0.0f, 0.0f, 1.0f, 1.0f },{ 1.0f,  0.0f,  0.0f },{ 0.0f, 0.0f } },
 		//Top (yellow)
-		{ { -mag,  mag,  mag },{ 1.0f, 1.0f, 0.0f, 1.0f },{  0.0f,  1.0f,  0.0f } },
-		{ {  mag,  mag, -mag },{ 1.0f, 1.0f, 0.0f, 1.0f },{  0.0f,  1.0f,  0.0f } },
-		{ {  mag,  mag,  mag },{ 1.0f, 1.0f, 0.0f, 1.0f },{  0.0f,  1.0f,  0.0f } },
-		{ {  mag,  mag, -mag },{ 1.0f, 1.0f, 0.0f, 1.0f },{  0.0f,  1.0f,  0.0f } },
-		{ { -mag,  mag,  mag },{ 1.0f, 1.0f, 0.0f, 1.0f },{  0.0f,  1.0f,  0.0f } },
-		{ { -mag,  mag, -mag },{ 1.0f, 1.0f, 0.0f, 1.0f },{  0.0f,  1.0f,  0.0f } },
+		{ { -mag,  mag,  mag },{ 1.0f, 1.0f, 0.0f, 1.0f },{ 0.0f,  1.0f,  0.0f },{ 0.0f, 0.0f } },
+		{ { mag,  mag, -mag },{ 1.0f, 1.0f, 0.0f, 1.0f },{ 0.0f,  1.0f,  0.0f },{ 0.0f, 0.0f } },
+		{ { mag,  mag,  mag },{ 1.0f, 1.0f, 0.0f, 1.0f },{ 0.0f,  1.0f,  0.0f },{ 0.0f, 0.0f } },
+		{ { mag,  mag, -mag },{ 1.0f, 1.0f, 0.0f, 1.0f },{ 0.0f,  1.0f,  0.0f },{ 0.0f, 0.0f } },
+		{ { -mag,  mag,  mag },{ 1.0f, 1.0f, 0.0f, 1.0f },{ 0.0f,  1.0f,  0.0f },{ 0.0f, 0.0f } },
+		{ { -mag,  mag, -mag },{ 1.0f, 1.0f, 0.0f, 1.0f },{ 0.0f,  1.0f,  0.0f },{ 0.0f, 0.0f } },
 		//Bottom (magenta)
-		{ { -mag, -mag,  mag },{ 1.0f, 0.0f, 1.0f, 1.0f },{  0.0f, -1.0f,  0.0f } },
-		{ {  mag, -mag,  mag },{ 1.0f, 0.0f, 1.0f, 1.0f },{  0.0f, -1.0f,  0.0f } },
-		{ {  mag, -mag, -mag },{ 1.0f, 0.0f, 1.0f, 1.0f },{  0.0f, -1.0f,  0.0f } },
-		{ {  mag, -mag, -mag },{ 1.0f, 0.0f, 1.0f, 1.0f },{  0.0f, -1.0f,  0.0f } },
-		{ { -mag, -mag, -mag },{ 1.0f, 0.0f, 1.0f, 1.0f },{  0.0f, -1.0f,  0.0f } },
-		{ { -mag, -mag,  mag },{ 1.0f, 0.0f, 1.0f, 1.0f },{  0.0f, -1.0f,  0.0f } },
+		{ { -mag, -mag,  mag },{ 1.0f, 0.0f, 1.0f, 1.0f },{ 0.0f, -1.0f,  0.0f },{ 0.0f, 0.0f } },
+		{ { mag, -mag,  mag },{ 1.0f, 0.0f, 1.0f, 1.0f },{ 0.0f, -1.0f,  0.0f },{ 0.0f, 0.0f } },
+		{ { mag, -mag, -mag },{ 1.0f, 0.0f, 1.0f, 1.0f },{ 0.0f, -1.0f,  0.0f },{ 0.0f, 0.0f } },
+		{ { mag, -mag, -mag },{ 1.0f, 0.0f, 1.0f, 1.0f },{ 0.0f, -1.0f,  0.0f },{ 0.0f, 0.0f } },
+		{ { -mag, -mag, -mag },{ 1.0f, 0.0f, 1.0f, 1.0f },{ 0.0f, -1.0f,  0.0f },{ 0.0f, 0.0f } },
+		{ { -mag, -mag,  mag },{ 1.0f, 0.0f, 1.0f, 1.0f },{ 0.0f, -1.0f,  0.0f },{ 0.0f, 0.0f } },
 		//Back (cyan)
-		{ { -mag,  mag, -mag },{ 0.0f, 1.0f, 1.0f, 1.0f },{  0.0f,  0.0f, -1.0f } },
-		{ {  mag,  mag, -mag },{ 0.0f, 1.0f, 1.0f, 1.0f },{  0.0f,  0.0f, -1.0f } },
-		{ { -mag, -mag, -mag },{ 0.0f, 1.0f, 1.0f, 1.0f },{  0.0f,  0.0f, -1.0f } },
-		{ {  mag,  mag, -mag },{ 0.0f, 1.0f, 1.0f, 1.0f },{  0.0f,  0.0f, -1.0f } },
-		{ { -mag, -mag, -mag },{ 0.0f, 1.0f, 1.0f, 1.0f },{  0.0f,  0.0f, -1.0f } },
-		{ {  mag, -mag, -mag },{ 0.0f, 1.0f, 1.0f, 1.0f },{  0.0f,  0.0f, -1.0f } }
+		{ { -mag,  mag, -mag },{ 0.0f, 1.0f, 1.0f, 1.0f },{ 0.0f,  0.0f, -1.0f },{ 0.0f, 0.0f } },
+		{ { mag,  mag, -mag },{ 0.0f, 1.0f, 1.0f, 1.0f },{ 0.0f,  0.0f, -1.0f },{ 0.0f, 0.0f } },
+		{ { -mag, -mag, -mag },{ 0.0f, 1.0f, 1.0f, 1.0f },{ 0.0f,  0.0f, -1.0f },{ 0.0f, 0.0f } },
+		{ { mag,  mag, -mag },{ 0.0f, 1.0f, 1.0f, 1.0f },{ 0.0f,  0.0f, -1.0f },{ 0.0f, 0.0f } },
+		{ { -mag, -mag, -mag },{ 0.0f, 1.0f, 1.0f, 1.0f },{ 0.0f,  0.0f, -1.0f },{ 0.0f, 0.0f } },
+		{ { mag, -mag, -mag },{ 0.0f, 1.0f, 1.0f, 1.0f },{ 0.0f,  0.0f, -1.0f },{ 0.0f, 0.0f } }
 	};
 
 }
@@ -810,47 +855,47 @@ std::vector<vertex> test_cube_solid() {
 
 	return{
 		//Front
-		{ { -mag,  mag,  mag },col,{  0.0f,  0.0f,  1.0f } },
-		{ {  mag,  mag,  mag },col,{  0.0f,  0.0f,  1.0f } },
-		{ { -mag, -mag,  mag },col,{  0.0f,  0.0f,  1.0f } },
-		{ { -mag, -mag,  mag },col,{  0.0f,  0.0f,  1.0f } },
-		{ {  mag,  mag,  mag },col,{  0.0f,  0.0f,  1.0f } },
-		{ {  mag, -mag,  mag },col,{  0.0f,  0.0f,  1.0f } },
+		{ { -mag,  mag,  mag },col,{ 0.0f,  0.0f,  1.0f },{ 0.0f, 0.0f } },
+		{ { mag,  mag,  mag },col,{ 0.0f,  0.0f,  1.0f },{ 0.0f, 0.0f } },
+		{ { -mag, -mag,  mag },col,{ 0.0f,  0.0f,  1.0f },{ 0.0f, 0.0f } },
+		{ { -mag, -mag,  mag },col,{ 0.0f,  0.0f,  1.0f },{ 0.0f, 0.0f } },
+		{ { mag,  mag,  mag },col,{ 0.0f,  0.0f,  1.0f },{ 0.0f, 0.0f } },
+		{ { mag, -mag,  mag },col,{ 0.0f,  0.0f,  1.0f },{ 0.0f, 0.0f } },
 		//Left
-		{ { -mag,  mag,  mag },col,{ -1.0f,  0.0f,  0.0f } },
-		{ { -mag, -mag,  mag },col,{ -1.0f,  0.0f,  0.0f } },
-		{ { -mag,  mag, -mag },col,{ -1.0f,  0.0f,  0.0f } },
-		{ { -mag, -mag,  mag },col,{ -1.0f,  0.0f,  0.0f } },
-		{ { -mag, -mag, -mag },col,{ -1.0f,  0.0f,  0.0f } },
-		{ { -mag,  mag, -mag },col,{ -1.0f,  0.0f,  0.0f } },
+		{ { -mag,  mag,  mag },col,{ -1.0f,  0.0f,  0.0f },{ 0.0f, 0.0f } },
+		{ { -mag, -mag,  mag },col,{ -1.0f,  0.0f,  0.0f },{ 0.0f, 0.0f } },
+		{ { -mag,  mag, -mag },col,{ -1.0f,  0.0f,  0.0f },{ 0.0f, 0.0f } },
+		{ { -mag, -mag,  mag },col,{ -1.0f,  0.0f,  0.0f },{ 0.0f, 0.0f } },
+		{ { -mag, -mag, -mag },col,{ -1.0f,  0.0f,  0.0f },{ 0.0f, 0.0f } },
+		{ { -mag,  mag, -mag },col,{ -1.0f,  0.0f,  0.0f },{ 0.0f, 0.0f } },
 		//Right
-		{ {  mag,  mag,  mag },col,{  1.0f,  0.0f,  0.0f } },
-		{ {  mag,  mag, -mag },col,{  1.0f,  0.0f,  0.0f } },
-		{ {  mag, -mag,  mag },col,{  1.0f,  0.0f,  0.0f } },
-		{ {  mag, -mag,  mag },col,{  1.0f,  0.0f,  0.0f } },
-		{ {  mag,  mag, -mag },col,{  1.0f,  0.0f,  0.0f } },
-		{ {  mag, -mag, -mag },col,{  1.0f,  0.0f,  0.0f } },
+		{ { mag,  mag,  mag },col,{ 1.0f,  0.0f,  0.0f },{ 0.0f, 0.0f } },
+		{ { mag,  mag, -mag },col,{ 1.0f,  0.0f,  0.0f },{ 0.0f, 0.0f } },
+		{ { mag, -mag,  mag },col,{ 1.0f,  0.0f,  0.0f },{ 0.0f, 0.0f } },
+		{ { mag, -mag,  mag },col,{ 1.0f,  0.0f,  0.0f },{ 0.0f, 0.0f } },
+		{ { mag,  mag, -mag },col,{ 1.0f,  0.0f,  0.0f },{ 0.0f, 0.0f } },
+		{ { mag, -mag, -mag },col,{ 1.0f,  0.0f,  0.0f },{ 0.0f, 0.0f } },
 		//Top
-		{ { -mag,  mag,  mag },col,{  0.0f,  1.0f,  0.0f } },
-		{ {  mag,  mag, -mag },col,{  0.0f,  1.0f,  0.0f } },
-		{ {  mag,  mag,  mag },col,{  0.0f,  1.0f,  0.0f } },
-		{ {  mag,  mag, -mag },col,{  0.0f,  1.0f,  0.0f } },
-		{ { -mag,  mag,  mag },col,{  0.0f,  1.0f,  0.0f } },
-		{ { -mag,  mag, -mag },col,{  0.0f,  1.0f,  0.0f } },
+		{ { -mag,  mag,  mag },col,{ 0.0f,  1.0f,  0.0f },{ 0.0f, 0.0f } },
+		{ { mag,  mag, -mag },col,{ 0.0f,  1.0f,  0.0f },{ 0.0f, 0.0f } },
+		{ { mag,  mag,  mag },col,{ 0.0f,  1.0f,  0.0f },{ 0.0f, 0.0f } },
+		{ { mag,  mag, -mag },col,{ 0.0f,  1.0f,  0.0f },{ 0.0f, 0.0f } },
+		{ { -mag,  mag,  mag },col,{ 0.0f,  1.0f,  0.0f },{ 0.0f, 0.0f } },
+		{ { -mag,  mag, -mag },col,{ 0.0f,  1.0f,  0.0f },{ 0.0f, 0.0f } },
 		//Bottom
-		{ { -mag, -mag,  mag },col,{  0.0f, -1.0f,  0.0f } },
-		{ {  mag, -mag,  mag },col,{  0.0f, -1.0f,  0.0f } },
-		{ {  mag, -mag, -mag },col,{  0.0f, -1.0f,  0.0f } },
-		{ {  mag, -mag, -mag },col,{  0.0f, -1.0f,  0.0f } },
-		{ { -mag, -mag, -mag },col,{  0.0f, -1.0f,  0.0f } },
-		{ { -mag, -mag,  mag },col,{  0.0f, -1.0f,  0.0f } },
+		{ { -mag, -mag,  mag },col,{ 0.0f, -1.0f,  0.0f },{ 0.0f, 0.0f } },
+		{ { mag, -mag,  mag },col,{ 0.0f, -1.0f,  0.0f },{ 0.0f, 0.0f } },
+		{ { mag, -mag, -mag },col,{ 0.0f, -1.0f,  0.0f },{ 0.0f, 0.0f } },
+		{ { mag, -mag, -mag },col,{ 0.0f, -1.0f,  0.0f },{ 0.0f, 0.0f } },
+		{ { -mag, -mag, -mag },col,{ 0.0f, -1.0f,  0.0f },{ 0.0f, 0.0f } },
+		{ { -mag, -mag,  mag },col,{ 0.0f, -1.0f,  0.0f },{ 0.0f, 0.0f } },
 		//Back
-		{ { -mag,  mag, -mag },col,{  0.0f,  0.0f, -1.0f } },
-		{ { -mag, -mag, -mag },col,{  0.0f,  0.0f, -1.0f } },
-		{ {  mag,  mag, -mag },col,{  0.0f,  0.0f, -1.0f } },
-		{ {  mag,  mag, -mag },col,{  0.0f,  0.0f, -1.0f } },
-		{ { -mag, -mag, -mag },col,{  0.0f,  0.0f, -1.0f } },
-		{ {  mag, -mag, -mag },col,{  0.0f,  0.0f, -1.0f } }
+		{ { -mag,  mag, -mag },col,{ 0.0f,  0.0f, -1.0f },{ 0.0f, 0.0f } },
+		{ { -mag, -mag, -mag },col,{ 0.0f,  0.0f, -1.0f },{ 0.0f, 0.0f } },
+		{ { mag,  mag, -mag },col,{ 0.0f,  0.0f, -1.0f },{ 0.0f, 0.0f } },
+		{ { mag,  mag, -mag },col,{ 0.0f,  0.0f, -1.0f },{ 0.0f, 0.0f } },
+		{ { -mag, -mag, -mag },col,{ 0.0f,  0.0f, -1.0f },{ 0.0f, 0.0f } },
+		{ { mag, -mag, -mag },col,{ 0.0f,  0.0f, -1.0f },{ 0.0f, 0.0f } }
 	};
 
 }
@@ -863,11 +908,11 @@ int main() {
 	// Vertices
 	std::vector<vertex> vertices;
 	// Test vertices
-	/*vertices = test_cube();*/
+	//vertices = test_quad();
 
 	// TinyObjLoader
-	std::string inputfile = "../meshes/teapot/teapot.obj";
-	std::string mtldir = "../meshes/teapot/";
+	std::string inputfile = "../meshes/sackboy/sackboy.obj";
+	std::string mtldir = "../meshes/sackboy/";
 	std::vector<tinyobj::shape_t> shapes;
 	std::vector<tinyobj::material_t> materials;
 
@@ -875,12 +920,12 @@ int main() {
 	bool ret = tinyobj::LoadObj(shapes, materials, err, inputfile.c_str(), mtldir.c_str(), tinyobj::triangulation | tinyobj::calculate_normals);
 
 	if (!err.empty()) {
-		fprintf(stderr, "%s\n", err.c_str());
+	fprintf(stderr, "%s\n", err.c_str());
 	}
 	if (!ret) {
-		fprintf(stderr, "tinyobjloader failed to load obj\n");
-		system("pause");
-		exit(-1);
+	fprintf(stderr, "tinyobjloader failed to load obj\n");
+	system("pause");
+	exit(-1);
 	}
 
 	printf("Num shapes:    %llu\n", shapes.size());
@@ -891,26 +936,34 @@ int main() {
 	std::uniform_real_distribution<> dis(0, 1);
 
 	for (size_t i = 0; i < shapes.size(); i++) {
-		printf("shape[%llu].name = %s\n", i, shapes[i].name.c_str());
-		printf("Size of shape[%llu].indices: %llu\n", i, shapes[i].mesh.indices.size());
-		printf("Size of shape[%llu].material_ids: %llu\n", i, shapes[i].mesh.material_ids.size());
-		printf("shape[%llu].vertices: %llu\n", i, shapes[i].mesh.positions.size());
+	printf("shape[%llu].name = %s\n", i, shapes[i].name.c_str());
+	printf("Size of shape[%llu].indices: %llu\n", i, shapes[i].mesh.indices.size());
+	printf("Size of shape[%llu].material_ids: %llu\n", i, shapes[i].mesh.material_ids.size());
+	printf("shape[%llu].vertices: %llu\n", i, shapes[i].mesh.positions.size());
+	printf("shape[%llu].texcoords: %llu\n", i, shapes[i].mesh.texcoords.size());
 
-		size_t indexOffset = 0;
-		for (size_t n = 0; n < shapes[i].mesh.num_vertices.size(); n++) {
-			for (size_t f = 0; f < shapes[i].mesh.num_vertices[n]; f++) {
-				unsigned int v = shapes[i].mesh.indices[indexOffset + f];
-				vertices.push_back({
-					{ shapes.at(i).mesh.positions[3 * v + 0], shapes.at(i).mesh.positions[3 * v + 1], shapes.at(i).mesh.positions[3 * v + 2] },
-					{ (float)dis(gen), (float)dis(gen), (float)dis(gen), 1.0f },
-					{ shapes.at(i).mesh.normals[3 * v + 0], shapes.at(i).mesh.normals[3 * v + 1], shapes.at(i).mesh.normals[3 * v + 2] }
-				});
-			}
+	size_t indexOffset = 0;
+	for (size_t n = 0; n < shapes[i].mesh.num_vertices.size(); n++) {
+	for (size_t f = 0; f < shapes[i].mesh.num_vertices[n]; f++) {
+	unsigned int v = shapes[i].mesh.indices[indexOffset + f];
 
-			indexOffset += shapes[i].mesh.num_vertices[n];
-		}
+	float Kd[3] = { 1 };
+	if (shapes[i].mesh.material_ids[n] >= 0) {
+	memcpy(&Kd[0], &materials[shapes[i].mesh.material_ids[n]].diffuse[0], 3*sizeof(float));
 	}
-	
+
+	vertices.push_back({
+	{ shapes.at(i).mesh.positions[3 * v + 0], shapes.at(i).mesh.positions[3 * v + 1], shapes.at(i).mesh.positions[3 * v + 2] },
+	{ Kd[0], Kd[1], Kd[2], 1.0f },
+	{ shapes.at(i).mesh.normals[3 * v + 0], shapes.at(i).mesh.normals[3 * v + 1], shapes.at(i).mesh.normals[3 * v + 2] },
+	{ shapes.at(i).mesh.texcoords[2 * v + 0], shapes.at(i).mesh.texcoords[2 * v + 1] }
+	});
+	}
+
+	indexOffset += shapes[i].mesh.num_vertices[n];
+	}
+	}
+
 
 	printf("\n---\n\n");
 
@@ -921,8 +974,9 @@ int main() {
 		glm::mat4 model_matrix;
 	} uboVS;
 
-	uboVS.projection_matrix = glm::scale(glm::vec3(1, -1, 1)) * glm::perspective(glm::radians(60.0f), (float)WIDTH / (float)HEIGHT, 0.1f, 256.0f);
-	uboVS.view_matrix = glm::lookAt(glm::vec3(150, 150, 2), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0));
+	uboVS.projection_matrix = glm::scale(glm::vec3(1, -1, 1)) * glm::perspective(glm::radians(60.0f), (float)WIDTH / (float)HEIGHT, 1.0f, 512.0f);
+	uboVS.view_matrix = glm::lookAt(glm::vec3(0, 100, 250), glm::vec3(0, 100, 0), glm::vec3(0, 1, 0)); //sackboy
+	//uboVS.view_matrix = glm::lookAt(glm::vec3(0, 0, 2), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0));
 	uboVS.model_matrix = glm::mat4();
 
 	// Initialize GLFW
@@ -1148,18 +1202,7 @@ int main() {
 		exit(-1);
 	}
 
-	uint32_t depth_memory_type_index = 0;
-	uint32_t depth_memory_type_bits = depth_memory_requirements.memoryTypeBits;
-	for (uint32_t k = 0; k < 32; k++) {
-		if ((depth_memory_type_bits & 1) == 1) {
-			if ((physical_device.getMemoryProperties().memoryTypes[k].propertyFlags & vk::MemoryPropertyFlagBits::eDeviceLocal) == vk::MemoryPropertyFlagBits::eDeviceLocal) {
-				depth_memory_type_index = k;
-				break;
-			}
-		}
-
-		depth_memory_type_bits >>= 1;
-	}
+	uint32_t depth_memory_type_index = get_memory_type(physical_device, depth_memory_requirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal);
 
 	// Allocate device memory for image
 	vk::MemoryAllocateInfo depth_memory_allocate_info(
@@ -1372,6 +1415,14 @@ int main() {
 			(sizeof(vertices.front().pos) + sizeof(vertices.front().col))
 		)
 	);
+	vertex_input_attribute_descriptions.push_back( // Texcoords
+		vk::VertexInputAttributeDescription(
+			3,
+			0,
+			vk::Format::eR32G32Sfloat,
+			(sizeof(vertices.front().pos) + sizeof(vertices.front().col) + sizeof(vertices.front().norm))
+		)
+	);
 
 	vk::PipelineVertexInputStateCreateInfo vertex_input_state_create_info(
 		vk::PipelineVertexInputStateCreateFlags(),
@@ -1481,6 +1532,7 @@ int main() {
 	// Set up descriptor pool
 	std::vector<vk::DescriptorPoolSize> descriptor_pool_sizes;
 	descriptor_pool_sizes.push_back(vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, 1));
+	descriptor_pool_sizes.push_back(vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, 1));
 
 	vk::DescriptorPoolCreateInfo descriptor_pool_create_info(
 		vk::DescriptorPoolCreateFlags(),
@@ -1501,12 +1553,21 @@ int main() {
 
 	// Create descriptor set layout
 	std::vector<vk::DescriptorSetLayoutBinding> layout_bindings;
-	layout_bindings.push_back(
+	layout_bindings.push_back( // Vertex Shader Uniform Buffer
 		vk::DescriptorSetLayoutBinding(
 			0,
 			vk::DescriptorType::eUniformBuffer,
 			1,
 			vk::ShaderStageFlags(vk::ShaderStageFlagBits::eVertex),
+			nullptr
+		)
+	);
+	layout_bindings.push_back(
+		vk::DescriptorSetLayoutBinding(
+			1,
+			vk::DescriptorType::eCombinedImageSampler,
+			1,
+			vk::ShaderStageFlags(vk::ShaderStageFlagBits::eFragment),
 			nullptr
 		)
 	);
@@ -1664,18 +1725,7 @@ int main() {
 	}
 
 	// Allocate host visible (change to coherent?) memory
-	uint32_t uniform_buffer_memory_type_index = 0;
-	uint32_t uniform_buffer_memory_type_bits = uniform_buffer_memory_requirements.memoryTypeBits;
-	for (uint32_t k = 0; k < 32; k++) {
-		if ((uniform_buffer_memory_type_bits & 1) == 1) {
-			if ((physical_device.getMemoryProperties().memoryTypes[k].propertyFlags & (vk::MemoryPropertyFlagBits::eHostVisible)) == (vk::MemoryPropertyFlagBits::eHostVisible)) {
-				uniform_buffer_memory_type_index = k;
-				break;
-			}
-		}
-
-		uniform_buffer_memory_type_bits >>= 1;
-	}
+	uint32_t uniform_buffer_memory_type_index = get_memory_type(physical_device, uniform_buffer_memory_requirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eHostVisible);
 
 	vk::MemoryAllocateInfo uniform_buffer_allocate_info(
 		uniform_buffer_memory_requirements.size,
@@ -1692,10 +1742,177 @@ int main() {
 		exit(-1);
 	}
 
-	update_buffer(device, uniform_buffer_device_memory, &uboVS, sizeof(uboVS));
+	update_memory(device, uniform_buffer_device_memory, &uboVS, sizeof(uboVS));
 
 	try {
 		device.bindBufferMemory(uniform_buffer, uniform_buffer_device_memory, 0);
+	}
+	catch (const std::system_error& e) {
+		fprintf(stderr, "Vulkan failure: %s\n", e.what());
+		system("pause");
+		exit(-1);
+	}
+
+	// Create texture sampler
+	int texture_width, texture_height, texture_comp;
+	unsigned char* texture = stbi_load("../meshes/sackboy/Body.png", &texture_width, &texture_height, &texture_comp, 4);
+	printf("width: %d height: %d\n", texture_width, texture_height);
+
+	vk::ImageCreateInfo texture_image_create_info(
+		vk::ImageCreateFlags(),
+		vk::ImageType::e2D,
+		vk::Format::eR8G8B8A8Unorm,
+		vk::Extent3D(texture_width, texture_height, 1),
+		1,
+		1,
+		vk::SampleCountFlagBits::e1,
+		vk::ImageTiling::eLinear,
+		vk::ImageUsageFlags(vk::ImageUsageFlagBits::eSampled),
+		vk::SharingMode::eExclusive,
+		0,
+		nullptr,
+		vk::ImageLayout::ePreinitialized
+	);
+
+	vk::Image texture_image;
+	try {
+		texture_image = device.createImage(texture_image_create_info);
+	}
+	catch (const std::system_error& e) {
+		fprintf(stderr, "Vulkan failure: %s\n", e.what());
+		system("pause");
+		exit(-1);
+	}
+
+	vk::MemoryRequirements texture_memory_requirements;
+	try {
+		texture_memory_requirements = device.getImageMemoryRequirements(texture_image);
+	}
+	catch (const std::system_error& e) {
+		fprintf(stderr, "Vulkan failure: %s\n", e.what());
+		system("pause");
+		exit(-1);
+	}
+
+	uint32_t texture_memory_type_index = get_memory_type(physical_device, texture_memory_requirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eHostVisible);
+
+	vk::MemoryAllocateInfo texture_memory_allocate_info(
+		texture_memory_requirements.size,
+		texture_memory_type_index
+	);
+
+	vk::DeviceMemory texture_image_memory;
+	try {
+		texture_image_memory = device.allocateMemory(texture_memory_allocate_info);
+	}
+	catch (const std::system_error& e) {
+		fprintf(stderr, "Vulkan failure: %s\n", e.what());
+		system("pause");
+		exit(-1);
+	}
+
+	try {
+		device.bindImageMemory(texture_image, texture_image_memory, (vk::DeviceSize)0);
+	}
+	catch (const std::system_error& e) {
+		fprintf(stderr, "Vulkan failure: %s\n", e.what());
+		system("pause");
+		exit(-1);
+	}
+
+	// maybe need to convert image layout here?
+
+	vk::ImageSubresource texture_image_subresource(
+		vk::ImageAspectFlags(vk::ImageAspectFlagBits::eColor),
+		0,
+		0
+	);
+
+	vk::SubresourceLayout texture_subresource_layout;
+	try {
+		texture_subresource_layout = device.getImageSubresourceLayout(texture_image, texture_image_subresource);
+	}
+	catch (const std::system_error& e) {
+		fprintf(stderr, "Vulkan failure: %s\n", e.what());
+		system("pause");
+		exit(-1);
+	}
+
+	// copy texture to memory taking row pitch into account
+	void* texture_mapped_memory;
+	try {
+		texture_mapped_memory = device.mapMemory(texture_image_memory, 0, VK_WHOLE_SIZE, vk::MemoryMapFlags());
+	}
+	catch (const std::system_error& e) {
+		fprintf(stderr, "Vulkan failure: %s\n", e.what());
+		system("pause");
+		exit(-1);
+	}
+
+	char* rowPtr = reinterpret_cast<char*>(texture_mapped_memory);
+	for (int y = 0; y < texture_height; y++) {
+		memcpy(rowPtr, &texture[y*texture_width*4], texture_width*4);
+		rowPtr += texture_subresource_layout.rowPitch;
+	}
+
+	try {
+		device.unmapMemory(texture_image_memory);
+	}
+	catch (const std::system_error& e) {
+		fprintf(stderr, "Vulkan failure: %s\n", e.what());
+		system("pause");
+		exit(-1);
+	}
+
+
+
+	vk::ImageViewCreateInfo texture_image_view_create_info(
+		vk::ImageViewCreateFlags(),
+		texture_image,
+		vk::ImageViewType::e2D,
+		vk::Format::eR8G8B8A8Unorm,
+		vk::ComponentMapping(vk::ComponentSwizzle::eR, vk::ComponentSwizzle::eG, vk::ComponentSwizzle::eB, vk::ComponentSwizzle::eA),
+		vk::ImageSubresourceRange(
+			vk::ImageAspectFlags(vk::ImageAspectFlagBits::eColor),
+			0,
+			1,
+			0,
+			1
+		)
+	);
+
+	vk::ImageView texture_image_view;
+	try {
+		texture_image_view = device.createImageView(texture_image_view_create_info);
+	}
+	catch (const std::system_error& e) {
+		fprintf(stderr, "Vulkan failure: %s\n", e.what());
+		system("pause");
+		exit(-1);
+	}
+
+	vk::SamplerCreateInfo texture_sampler_create_info(
+		vk::SamplerCreateFlags(),
+		vk::Filter::eLinear,
+		vk::Filter::eLinear,
+		vk::SamplerMipmapMode::eLinear,
+		vk::SamplerAddressMode::eRepeat,
+		vk::SamplerAddressMode::eRepeat,
+		vk::SamplerAddressMode::eRepeat,
+		0.0f,
+		VK_FALSE,
+		0,
+		VK_FALSE,
+		vk::CompareOp::eNever,
+		0.0f,
+		0.0f,
+		vk::BorderColor::eFloatOpaqueWhite,
+		VK_FALSE
+	);
+
+	vk::Sampler texture_sampler;
+	try {
+		texture_sampler = device.createSampler(texture_sampler_create_info);
 	}
 	catch (const std::system_error& e) {
 		fprintf(stderr, "Vulkan failure: %s\n", e.what());
@@ -1707,6 +1924,11 @@ int main() {
 		uniform_buffer,
 		0,
 		sizeof(uboVS)
+	);
+	vk::DescriptorImageInfo texture_descriptor(
+		texture_sampler,
+		texture_image_view,
+		vk::ImageLayout::eGeneral
 	);
 
 	// Create descriptor set
@@ -1726,19 +1948,34 @@ int main() {
 		exit(-1);
 	}
 
-	vk::WriteDescriptorSet write_descriptor_set(
-		descriptor_sets.at(0),
-		0,
-		0,
-		1,
-		vk::DescriptorType::eUniformBuffer,
-		nullptr,
-		&uniform_buffer_descriptor,
-		nullptr
+	std::vector<vk::WriteDescriptorSet> write_descriptor_sets;
+	write_descriptor_sets.push_back( // Vertex Shader Uniform Buffer
+		vk::WriteDescriptorSet(
+			descriptor_sets.at(0),
+			0,
+			0,
+			1,
+			vk::DescriptorType::eUniformBuffer,
+			nullptr,
+			&uniform_buffer_descriptor,
+			nullptr
+		)
+	);
+	write_descriptor_sets.push_back( // Fragment Shader Texture Sampler
+		vk::WriteDescriptorSet(
+			descriptor_sets.at(0),
+			1,
+			0,
+			1,
+			vk::DescriptorType::eCombinedImageSampler,
+			&texture_descriptor,
+			nullptr,
+			nullptr
+		)
 	);
 
 	try {
-		device.updateDescriptorSets(write_descriptor_set, nullptr);
+		device.updateDescriptorSets(write_descriptor_sets, nullptr);
 	}
 	catch (const std::system_error& e) {
 		fprintf(stderr, "Vulkan failure: %s\n", e.what());
@@ -1777,18 +2014,7 @@ int main() {
 	}
 
 	// No staging yet, just allocate host visible memory for now.
-	uint32_t vertex_buffer_memory_type_index = 0;
-	uint32_t vertex_buffer_memory_type_bits = vertex_buffer_memory_requirements.memoryTypeBits;
-	for (uint32_t k = 0; k < 32; k++) {
-		if ((vertex_buffer_memory_type_bits & 1) == 1) {
-			if ((physical_device.getMemoryProperties().memoryTypes[k].propertyFlags & vk::MemoryPropertyFlagBits::eHostVisible) == vk::MemoryPropertyFlagBits::eHostVisible) {
-				vertex_buffer_memory_type_index = k;
-				break;
-			}
-		}
-
-		vertex_buffer_memory_type_bits >>= 1;
-	}
+	uint32_t vertex_buffer_memory_type_index = get_memory_type(physical_device, vertex_buffer_memory_requirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eHostVisible);
 
 	vk::MemoryAllocateInfo vertex_buffer_allocate_info(
 		vertex_buffer_memory_requirements.size,
@@ -1805,7 +2031,7 @@ int main() {
 		exit(-1);
 	}
 
-	update_buffer(device, vertex_buffer_device_memory, vertices.data(), vertices.size() * sizeof(vertices.at(0)));
+	update_memory(device, vertex_buffer_device_memory, vertices.data(), vertices.size() * sizeof(vertices.at(0)));
 
 	try {
 		device.bindBufferMemory(vertex_buffer, vertex_buffer_device_memory, 0);
@@ -1822,7 +2048,7 @@ int main() {
 	clear_values.push_back(
 		vk::ClearValue(
 			std::array<float, 4>{ 0.467f, 0.725f, 0.f, 0.f }
-		)
+	)
 	);
 	clear_values.push_back(
 		vk::ClearDepthStencilValue(
@@ -2051,26 +2277,26 @@ int main() {
 
 		// GLFW Input Handling
 		glfwPollEvents();
-//TODO: Move the following functions to a GLFW key callback
+		//TODO: Move the following functions to a GLFW key callback
 		if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
 			glfwSetWindowShouldClose(window, 1);
 			quit = true;
 		}
 		else if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS) {
 			uboVS.model_matrix = glm::rotate(0.0004f, glm::vec3(0.0f, 1.0f, 0.0f)) * uboVS.model_matrix;
-			update_buffer(device, uniform_buffer_device_memory, &uboVS, sizeof(uboVS));
+			update_memory(device, uniform_buffer_device_memory, &uboVS, sizeof(uboVS));
 		}
 		else if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS) {
 			uboVS.model_matrix = glm::rotate(-0.0004f, glm::vec3(0.0f, 1.0f, 0.0f)) * uboVS.model_matrix;
-			update_buffer(device, uniform_buffer_device_memory, &uboVS, sizeof(uboVS));
+			update_memory(device, uniform_buffer_device_memory, &uboVS, sizeof(uboVS));
 		}
 		else if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS) {
 			uboVS.model_matrix = glm::rotate(-0.0004f, camera_right) * uboVS.model_matrix;
-			update_buffer(device, uniform_buffer_device_memory, &uboVS, sizeof(uboVS));
+			update_memory(device, uniform_buffer_device_memory, &uboVS, sizeof(uboVS));
 		}
 		else if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS) {
 			uboVS.model_matrix = glm::rotate(0.0004f, camera_right) * uboVS.model_matrix;
-			update_buffer(device, uniform_buffer_device_memory, &uboVS, sizeof(uboVS));
+			update_memory(device, uniform_buffer_device_memory, &uboVS, sizeof(uboVS));
 		}
 
 		// Get next swapchain image
@@ -2136,7 +2362,7 @@ int main() {
 	system("pause");
 
 	// Clean Up
-// TODO: FIX THIS FUNCTION
+	// TODO: FIX THIS FUNCTION
 	// Destroy Callbacks (comment this out if you want to see debug info about cleanup)
 #if !DEBUG_CLEANUP
 	PFN_vkDestroyDebugReportCallbackEXT vkDestroyDebugReportCallbackEXT =
