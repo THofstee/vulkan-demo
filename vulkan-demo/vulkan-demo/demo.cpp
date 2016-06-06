@@ -152,9 +152,10 @@ layout(location = 3) in vec2 texcoord;
 layout(location = 0) out vec4 out_Color;
 
 layout(binding = 1) uniform sampler2D tex;
+layout(binding = 2) uniform sampler2D tex2;
 
 void main() {
-  out_Color = texture(tex, texcoord) * col;
+  out_Color =  texture(tex, texcoord) * texture(tex2, texcoord) * col;
 }
 )fragmentShader";
 
@@ -911,8 +912,8 @@ int main() {
 	//vertices = test_quad();
 
 	// TinyObjLoader
-	std::string inputfile = "../meshes/sackboy/sackboy.obj";
-	std::string mtldir = "../meshes/sackboy/";
+	std::string inputfile = "../meshes/cube/cube.obj";
+	std::string mtldir = "../meshes/cube/";
 	std::vector<tinyobj::shape_t> shapes;
 	std::vector<tinyobj::material_t> materials;
 
@@ -975,8 +976,8 @@ int main() {
 	} uboVS;
 
 	uboVS.projection_matrix = glm::scale(glm::vec3(1, -1, 1)) * glm::perspective(glm::radians(60.0f), (float)WIDTH / (float)HEIGHT, 1.0f, 512.0f);
-	uboVS.view_matrix = glm::lookAt(glm::vec3(0, 100, 250), glm::vec3(0, 100, 0), glm::vec3(0, 1, 0)); //sackboy
-	//uboVS.view_matrix = glm::lookAt(glm::vec3(0, 0, 2), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0));
+	//uboVS.view_matrix = glm::lookAt(glm::vec3(0, 100, 250), glm::vec3(0, 100, 0), glm::vec3(0, 1, 0)); //sackboy
+	uboVS.view_matrix = glm::lookAt(glm::vec3(0, 0, 2), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0));
 	uboVS.model_matrix = glm::mat4();
 
 	// Initialize GLFW
@@ -1533,6 +1534,7 @@ int main() {
 	std::vector<vk::DescriptorPoolSize> descriptor_pool_sizes;
 	descriptor_pool_sizes.push_back(vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, 1));
 	descriptor_pool_sizes.push_back(vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, 1));
+	descriptor_pool_sizes.push_back(vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, 1));
 
 	vk::DescriptorPoolCreateInfo descriptor_pool_create_info(
 		vk::DescriptorPoolCreateFlags(),
@@ -1565,6 +1567,15 @@ int main() {
 	layout_bindings.push_back(
 		vk::DescriptorSetLayoutBinding(
 			1,
+			vk::DescriptorType::eCombinedImageSampler,
+			1,
+			vk::ShaderStageFlags(vk::ShaderStageFlagBits::eFragment),
+			nullptr
+		)
+	);
+	layout_bindings.push_back(
+		vk::DescriptorSetLayoutBinding(
+			2,
 			vk::DescriptorType::eCombinedImageSampler,
 			1,
 			vk::ShaderStageFlags(vk::ShaderStageFlagBits::eFragment),
@@ -1755,8 +1766,10 @@ int main() {
 
 	// Create texture sampler
 	int texture_width, texture_height, texture_comp;
-	unsigned char* texture = stbi_load("../meshes/sackboy/Body.png", &texture_width, &texture_height, &texture_comp, 4);
-	printf("width: %d height: %d\n", texture_width, texture_height);
+	int texture2_width, texture2_height, texture2_comp;
+	unsigned char* texture = stbi_load("../meshes/cube/default.png", &texture_width, &texture_height, &texture_comp, 4);
+	unsigned char* texture2 = stbi_load("../meshes/cube/tounge.png", &texture2_width, &texture2_height, &texture2_comp, 4);
+
 
 	vk::ImageCreateInfo texture_image_create_info(
 		vk::ImageCreateFlags(),
@@ -1774,9 +1787,36 @@ int main() {
 		vk::ImageLayout::ePreinitialized
 	);
 
+	vk::ImageCreateInfo texture2_image_create_info(
+		vk::ImageCreateFlags(),
+		vk::ImageType::e2D,
+		vk::Format::eR8G8B8A8Unorm,
+		vk::Extent3D(texture2_width, texture2_height, 1),
+		1,
+		1,
+		vk::SampleCountFlagBits::e1,
+		vk::ImageTiling::eLinear,
+		vk::ImageUsageFlags(vk::ImageUsageFlagBits::eSampled),
+		vk::SharingMode::eExclusive,
+		0,
+		nullptr,
+		vk::ImageLayout::ePreinitialized
+	);
+
+
 	vk::Image texture_image;
 	try {
 		texture_image = device.createImage(texture_image_create_info);
+	}
+	catch (const std::system_error& e) {
+		fprintf(stderr, "Vulkan failure: %s\n", e.what());
+		system("pause");
+		exit(-1);
+	}
+
+	vk::Image texture2_image;
+	try {
+		texture2_image = device.createImage(texture2_image_create_info);
 	}
 	catch (const std::system_error& e) {
 		fprintf(stderr, "Vulkan failure: %s\n", e.what());
@@ -1794,6 +1834,16 @@ int main() {
 		exit(-1);
 	}
 
+	vk::MemoryRequirements texture2_memory_requirements;
+	try {
+		texture2_memory_requirements = device.getImageMemoryRequirements(texture2_image);
+	}
+	catch (const std::system_error& e) {
+		fprintf(stderr, "Vulkan failure: %s\n", e.what());
+		system("pause");
+		exit(-1);
+	}
+
 	uint32_t texture_memory_type_index = get_memory_type(physical_device, texture_memory_requirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eHostVisible);
 
 	vk::MemoryAllocateInfo texture_memory_allocate_info(
@@ -1801,9 +1851,26 @@ int main() {
 		texture_memory_type_index
 	);
 
+	uint32_t texture2_memory_type_index = get_memory_type(physical_device, texture2_memory_requirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eHostVisible);
+
+	vk::MemoryAllocateInfo texture2_memory_allocate_info(
+		texture2_memory_requirements.size,
+		texture2_memory_type_index
+	);
+
 	vk::DeviceMemory texture_image_memory;
 	try {
 		texture_image_memory = device.allocateMemory(texture_memory_allocate_info);
+	}
+	catch (const std::system_error& e) {
+		fprintf(stderr, "Vulkan failure: %s\n", e.what());
+		system("pause");
+		exit(-1);
+	}
+
+	vk::DeviceMemory texture2_image_memory;
+	try {
+		texture2_image_memory = device.allocateMemory(texture2_memory_allocate_info);
 	}
 	catch (const std::system_error& e) {
 		fprintf(stderr, "Vulkan failure: %s\n", e.what());
@@ -1820,6 +1887,15 @@ int main() {
 		exit(-1);
 	}
 
+	try {
+		device.bindImageMemory(texture2_image, texture2_image_memory, (vk::DeviceSize)0);
+	}
+	catch (const std::system_error& e) {
+		fprintf(stderr, "Vulkan failure: %s\n", e.what());
+		system("pause");
+		exit(-1);
+	}
+
 	// maybe need to convert image layout here?
 
 	vk::ImageSubresource texture_image_subresource(
@@ -1828,9 +1904,25 @@ int main() {
 		0
 	);
 
+	vk::ImageSubresource texture2_image_subresource(
+		vk::ImageAspectFlags(vk::ImageAspectFlagBits::eColor),
+		0,
+		0
+	);
+
 	vk::SubresourceLayout texture_subresource_layout;
 	try {
 		texture_subresource_layout = device.getImageSubresourceLayout(texture_image, texture_image_subresource);
+	}
+	catch (const std::system_error& e) {
+		fprintf(stderr, "Vulkan failure: %s\n", e.what());
+		system("pause");
+		exit(-1);
+	}
+
+	vk::SubresourceLayout texture2_subresource_layout;
+	try {
+		texture2_subresource_layout = device.getImageSubresourceLayout(texture2_image, texture2_image_subresource);
 	}
 	catch (const std::system_error& e) {
 		fprintf(stderr, "Vulkan failure: %s\n", e.what());
@@ -1849,14 +1941,40 @@ int main() {
 		exit(-1);
 	}
 
+	void* texture2_mapped_memory;
+	try {
+		texture2_mapped_memory = device.mapMemory(texture2_image_memory, 0, VK_WHOLE_SIZE, vk::MemoryMapFlags());
+	}
+	catch (const std::system_error& e) {
+		fprintf(stderr, "Vulkan failure: %s\n", e.what());
+		system("pause");
+		exit(-1);
+	}
+
+
 	char* rowPtr = reinterpret_cast<char*>(texture_mapped_memory);
 	for (int y = 0; y < texture_height; y++) {
 		memcpy(rowPtr, &texture[y*texture_width*4], texture_width*4);
 		rowPtr += texture_subresource_layout.rowPitch;
 	}
 
+	char* rowPtr2 = reinterpret_cast<char*>(texture2_mapped_memory);
+	for (int y = 0; y < texture2_height; y++) {
+		memcpy(rowPtr2, &texture2[y*texture2_width * 4], texture2_width * 4);
+		rowPtr2 += texture2_subresource_layout.rowPitch;
+	}
+
 	try {
 		device.unmapMemory(texture_image_memory);
+	}
+	catch (const std::system_error& e) {
+		fprintf(stderr, "Vulkan failure: %s\n", e.what());
+		system("pause");
+		exit(-1);
+	}
+
+	try {
+		device.unmapMemory(texture2_image_memory);
 	}
 	catch (const std::system_error& e) {
 		fprintf(stderr, "Vulkan failure: %s\n", e.what());
@@ -1881,6 +1999,21 @@ int main() {
 		)
 	);
 
+	vk::ImageViewCreateInfo texture2_image_view_create_info(
+		vk::ImageViewCreateFlags(),
+		texture2_image,
+		vk::ImageViewType::e2D,
+		vk::Format::eR8G8B8A8Unorm,
+		vk::ComponentMapping(vk::ComponentSwizzle::eR, vk::ComponentSwizzle::eG, vk::ComponentSwizzle::eB, vk::ComponentSwizzle::eA),
+		vk::ImageSubresourceRange(
+			vk::ImageAspectFlags(vk::ImageAspectFlagBits::eColor),
+			0,
+			1,
+			0,
+			1
+		)
+	);
+
 	vk::ImageView texture_image_view;
 	try {
 		texture_image_view = device.createImageView(texture_image_view_create_info);
@@ -1891,7 +2024,36 @@ int main() {
 		exit(-1);
 	}
 
+	vk::ImageView texture2_image_view;
+	try {
+		texture2_image_view = device.createImageView(texture2_image_view_create_info);
+	}
+	catch (const std::system_error& e) {
+		fprintf(stderr, "Vulkan failure: %s\n", e.what());
+		system("pause");
+		exit(-1);
+	}
+
 	vk::SamplerCreateInfo texture_sampler_create_info(
+		vk::SamplerCreateFlags(),
+		vk::Filter::eLinear,
+		vk::Filter::eLinear,
+		vk::SamplerMipmapMode::eLinear,
+		vk::SamplerAddressMode::eRepeat,
+		vk::SamplerAddressMode::eRepeat,
+		vk::SamplerAddressMode::eRepeat,
+		0.0f,
+		VK_FALSE,
+		0,
+		VK_FALSE,
+		vk::CompareOp::eNever,
+		0.0f,
+		0.0f,
+		vk::BorderColor::eFloatOpaqueWhite,
+		VK_FALSE
+	);
+
+	vk::SamplerCreateInfo texture2_sampler_create_info(
 		vk::SamplerCreateFlags(),
 		vk::Filter::eLinear,
 		vk::Filter::eLinear,
@@ -1920,6 +2082,16 @@ int main() {
 		exit(-1);
 	}
 
+	vk::Sampler texture2_sampler;
+	try {
+		texture2_sampler = device.createSampler(texture2_sampler_create_info);
+	}
+	catch (const std::system_error& e) {
+		fprintf(stderr, "Vulkan failure: %s\n", e.what());
+		system("pause");
+		exit(-1);
+	}
+
 	vk::DescriptorBufferInfo uniform_buffer_descriptor(
 		uniform_buffer,
 		0,
@@ -1928,6 +2100,11 @@ int main() {
 	vk::DescriptorImageInfo texture_descriptor(
 		texture_sampler,
 		texture_image_view,
+		vk::ImageLayout::eGeneral
+	);
+	vk::DescriptorImageInfo texture2_descriptor(
+		texture2_sampler,
+		texture2_image_view,
 		vk::ImageLayout::eGeneral
 	);
 
@@ -1969,6 +2146,18 @@ int main() {
 			1,
 			vk::DescriptorType::eCombinedImageSampler,
 			&texture_descriptor,
+			nullptr,
+			nullptr
+		)
+	);
+	write_descriptor_sets.push_back( // Fragment Shader Texture Sampler
+		vk::WriteDescriptorSet(
+			descriptor_sets.at(0),
+			2,
+			0,
+			1,
+			vk::DescriptorType::eCombinedImageSampler,
+			&texture2_descriptor,
 			nullptr,
 			nullptr
 		)
