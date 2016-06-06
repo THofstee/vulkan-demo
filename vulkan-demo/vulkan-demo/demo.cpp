@@ -861,10 +861,10 @@ int main() {
 	// Vertices
 	std::vector<vertex> vertices;
 	// Test vertices
-	vertices = test_cube();
+	/*vertices = test_cube();*/
 
 	// TinyObjLoader
-	/*std::string inputfile = "../meshes/teapot/teapot.obj";
+	std::string inputfile = "../meshes/teapot/teapot.obj";
 	std::string mtldir = "../meshes/teapot/";
 	std::vector<tinyobj::shape_t> shapes;
 	std::vector<tinyobj::material_t> materials;
@@ -889,17 +889,28 @@ int main() {
 	std::uniform_real_distribution<> dis(0, 1);
 
 	for (size_t i = 0; i < shapes.size(); i++) {
-		for (size_t v = 0; v < shapes.at(i).mesh.positions.size() / 3; v++) {
-			vertices.push_back({
-				{ shapes.at(i).mesh.positions[3 * v + 0], shapes.at(i).mesh.positions[3 * v + 1], shapes.at(i).mesh.positions[3 * v + 2] },
-				{ (float)dis(gen), (float)dis(gen), (float)dis(gen), 1.0f },
-				{ shapes.at(i).mesh.normals[3 * v + 0], shapes.at(i).mesh.normals[3 * v + 1], shapes.at(i).mesh.normals[3 * v + 2] }
-			});
+		printf("shape[%ld].name = %s\n", i, shapes[i].name.c_str());
+		printf("Size of shape[%ld].indices: %ld\n", i, shapes[i].mesh.indices.size());
+		printf("Size of shape[%ld].material_ids: %ld\n", i, shapes[i].mesh.material_ids.size());
+		printf("shape[%ld].vertices: %ld\n", i, shapes[i].mesh.positions.size());
+
+		size_t indexOffset = 0;
+		for (size_t n = 0; n < shapes[i].mesh.num_vertices.size(); n++) {
+			for (size_t f = 0; f < shapes[i].mesh.num_vertices[n]; f++) {
+				unsigned int v = shapes[i].mesh.indices[indexOffset + f];
+				vertices.push_back({
+					{ shapes.at(i).mesh.positions[3 * v + 0], shapes.at(i).mesh.positions[3 * v + 1], shapes.at(i).mesh.positions[3 * v + 2] },
+					{ (float)dis(gen), (float)dis(gen), (float)dis(gen), 1.0f },
+					{ shapes.at(i).mesh.normals[3 * v + 0], shapes.at(i).mesh.normals[3 * v + 1], shapes.at(i).mesh.normals[3 * v + 2] }
+				});
+			}
+
+			indexOffset += shapes[i].mesh.num_vertices[n];
 		}
 	}
 	
 
-	printf("\n---\n\n");*/
+	printf("\n---\n\n");
 
 	// Uniforms
 	struct {
@@ -908,8 +919,8 @@ int main() {
 		glm::mat4 model_matrix;
 	} uboVS;
 
-	uboVS.projection_matrix = glm::perspective(glm::radians(60.0f), (float)WIDTH / (float)HEIGHT, 0.1f, 256.0f);
-	uboVS.view_matrix = glm::lookAt(glm::vec3(1, 1, 2), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0));
+	uboVS.projection_matrix = glm::scale(glm::vec3(1, -1, 1)) * glm::perspective(glm::radians(60.0f), (float)WIDTH / (float)HEIGHT, 0.1f, 256.0f);
+	uboVS.view_matrix = glm::lookAt(glm::vec3(150, 150, 2), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0));
 	uboVS.model_matrix = glm::mat4();
 
 	// Initialize GLFW
