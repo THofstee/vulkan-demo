@@ -25,8 +25,8 @@
 #define DEBUG true
 #define DEBUG_CLEANUP true
 
-#define WIDTH  640
-#define HEIGHT 480
+#define WIDTH  1920
+#define HEIGHT 1080
 #define VSYNC false
 
 // I don't want windows.h
@@ -120,11 +120,12 @@ R"vertexShader(
 #version 440
 
 layout(location = 0) in vec3 pos;
-layout(location = 1) in vec4 col;
+layout(location = 1) in vec4 tan;
 layout(location = 2) in vec3 norm;
 layout(location = 3) in vec2 tex;
 
-layout(location = 1) out vec4 Col;
+layout(location = 1) out vec3 Tan;
+layout(location = 2) out vec3 Norm;
 layout(location = 3) out vec2 Tex;
 
 layout(binding = 0) uniform UBO
@@ -135,9 +136,10 @@ layout(binding = 0) uniform UBO
 } ubo;
 
 void main() {
-	vec3 lightdir = normalize(vec3(-.3, -.4, -.6));
-	Col = col * clamp(dot((ubo.model * vec4(norm, 1.0)).xyz, -lightdir), 0.0, 1.0);
+	Tan = tan.xyz;
+	Norm = norm;
 	Tex = tex;
+
 	gl_Position = ubo.proj * ubo.view * ubo.model * vec4(pos, 1.0);
 }
 )vertexShader";
@@ -146,16 +148,99 @@ std::string fragShaderText =
 R"fragmentShader(
 #version 440
 
-layout(location = 1) in vec4 col;
+layout(location = 1) in vec3 tang;
+layout(location = 2) in vec3 norm;
 layout(location = 3) in vec2 texcoord;
 
 layout(location = 0) out vec4 out_Color;
 
-layout(binding = 1) uniform sampler2D tex;
-layout(binding = 2) uniform sampler2D tex2;
+layout(binding = 1) uniform sampler2D maskMap;
+layout(binding = 2) uniform sampler2D leatherNormalMap;
+layout(binding = 3) uniform sampler2D baseNormalMap;
+layout(binding = 4) uniform sampler2D aoMap;
+layout(binding = 5) uniform sampler2D leatherSpecularMap;
+layout(binding = 6) uniform sampler2D leatherMap;
+
+float ComputeLuminance(vec3 color)
+{
+    return color.x * 0.3 + color.y * 0.59 + color.z * 0.11;
+}
+
+vec3 desaturate(vec3 color, float factor)
+{
+    float lum = ComputeLuminance(color);
+    return mix(color, vec3(lum, lum, lum), factor);
+}
+
+vec3 TangentSpaceTransform(vec3 normal_in) {
+	vec3 vNormal = norm;
+	vec3 vTangent = tang;
+	vec3 vBiTangent = cross(vNormal, vTangent);
+	return normalize(normal_in.x * vTangent + normal_in.y * vBiTangent + normal_in.z * vNormal);
+}
+
+vec3 Lighting(vec3 normal, vec3 albedo, vec3 lightParam) {
+	vec3 pos = gl_FragCoord.xyz;
+	vec3 lightDir = vec3(1.0, 1.0, 0.0);
+	vec3 lightColor = vec3(0.7, 0.7, 0.6);
+	vec3 cameraPos = vec3(-90, 50, 0);
+
+	float brightness = clamp(dot(lightDir, normal), 0.0, 1.0);
+	vec3 view = normalize(cameraPos - pos);
+	
+	float roughness_in = lightParam.x;
+	float metallic_in = lightParam.y;
+	float specular_in = lightParam.z;
+
+	vec3 L = lightDir;
+	vec3 H = normalize(view + L);
+	
+	float dotNL = clamp(dot(normal, L), 0.01, 0.99);
+	float dotLH = clamp(dot(L, H), 0.01, 0.99);
+	float dotNH = clamp(dot(normal, H), 0.01, 0.99);
+
+	float alpha = roughness_in * roughness_in;
+	float p = 6.644/(alpha * alpha) - 6.644;
+	float pi = 3.14159;
+	float highlight = dotNL * exp2(p * dotNH - p) / (pi * (alpha * alpha)) * specular_in;
+
+	return lightColor * (albedo * (brightness + 0.7) * (1.0 - metallic_in) + mix(albedo, vec3(1.0), 1.0 - metallic_in) * highlight);
+}
 
 void main() {
-  out_Color =  texture(tex, texcoord) * texture(tex2, texcoord) * col;
+	vec2 normalCoord = texcoord * 5.79;
+	vec3 mask = texture(maskMap, texcoord).xyz;
+
+	vec2 macroNormalCoord = texcoord * 0.372;
+	vec3 macroNormal = (texture(leatherNormalMap, macroNormalCoord).xyz * 2.0 - vec3(1.0, 1.0, 1.0)) * vec3(0.274, 0.274, 0.0);
+	vec3 leatherNormal = (texture(leatherNormalMap, normalCoord).xyz * 2.0 - vec3(1.0, 1.0, 1.0)) * vec3(1.0, 1.0, 0.0);
+	vec3 normal = normalize(texture(baseNormalMap, texcoord).xyz * 2.0 - vec3(1.0, 1.0, 1.0) + (leatherNormal + macroNormal) * mask.x);
+
+	vec3 aoTex = texture(aoMap, texcoord).xyz;
+	vec3 specTex = texture(leatherSpecularMap, normalCoord).xyz;
+	float wearFactor = mask.z * 0.381;
+
+	float Roughness = mix(mix(mix(0.2, mix(mix(0.659, 2.01, specTex.x),
+								-0.154, wearFactor), mask.x), 0.0, mask.y), 0.0, aoTex.y);
+	float Metallic = mix(0.5, 0.1, specTex.x);
+	float Specular = 1.0;
+
+	float ao = aoTex.x;
+	vec3 Color1 = vec3(0.0, 0.0, 0.0);
+	float Desaturation2 = 0.0;
+	float Desaturation2WearSpot = 0.0896;
+	vec3 Color2 = vec3(1.0, 0.86, 0.833);
+	vec3 Color2WearSpot = vec3(0.628, 0.584, 0.584);
+	vec3 Color3 = vec3(0.823, 0.823, 0.823);
+	vec3 SeamColor = vec3(0.522, 0.270, 0.105);
+	vec3 albedo = mix(mix(mix(Color1,desaturate(texture(leatherMap, normalCoord).xyz,
+            mix(Desaturation2, Desaturation2WearSpot, wearFactor)) * 
+            mix(Color2, Color2WearSpot, wearFactor), mask.x), 
+            Color3, mask.y), SeamColor, aoTex.y) * ao;
+
+    vec3 normalTransform = TangentSpaceTransform(normal);
+	vec3 lighting = Lighting(normalTransform, albedo, vec3(Roughness, Metallic, Specular));
+    out_Color = vec4(lighting, 1.0);
 }
 )fragmentShader";
 
@@ -997,7 +1082,7 @@ std::vector<vertex> load_vtx(const char* inputfile) {
 	printf("Attributes: %u\n", attributes);
 
 	std::vector<vertexAttribute> vattrs;
-	for (int i = 0; i < attributes; i++) {
+	for (uint32_t i = 0; i < attributes; i++) {
 		vertexAttribute vattr;
 		uint32_t name_len;
 		fin.read((char*)&name_len, sizeof(uint32_t));
@@ -1030,9 +1115,10 @@ std::vector<vertex> load_vtx(const char* inputfile) {
 	printf("vert size: %d\n", vertSize);
 
 	while (fin.good()) {
-		float3 pos;
-		float3 norm;
-		float2 tex;
+		float3 pos = {};
+		float3 norm = {};
+		float3 tan = {};
+		float2 tex = {};
 		float4 col = { 1.0f, 1.0f, 1.0f, 1.0f };
 
 		for (int k = 0; k < vattrs.size(); k++) {
@@ -1062,9 +1148,23 @@ std::vector<vertex> load_vtx(const char* inputfile) {
 					fin.ignore((vattrs.at(k).components - 3) * sizeof(float));
 				}
 			}
+			else if (vattrs.at(k).name == L"vert_tangent") {
+				if (vattrs.at(k).components >= 3) {
+					fin.read((char*)&tan.x, 3 * sizeof(float));
+				}
+				else {
+					fprintf(stderr, "vtx loader: file format is incompatible\n");
+					exit(-1);
+				}
+
+				if (vattrs.at(k).components > 3) {
+					fin.ignore((vattrs.at(k).components - 3) * sizeof(float));
+				}
+			}
 			else if (vattrs.at(k).name == L"vert_texCoord0") {
 				if (vattrs.at(k).components >= 2) {
 					fin.read((char*)&tex.u, 2 * sizeof(float));
+					tex.v = -tex.v;
 				}
 				else {
 					fprintf(stderr, "vtx loader: file format is incompatible\n");
@@ -1075,12 +1175,13 @@ std::vector<vertex> load_vtx(const char* inputfile) {
 					fin.ignore((vattrs.at(k).components - 2) * sizeof(float));
 				}
 			}
+
 			else {
 				fin.ignore((vattrs.at(k).components) * sizeof(float));
 			}
 		}
 
-		vertices.push_back({ pos, col, norm, tex });
+		vertices.push_back({ pos, { tan.x, tan.y, tan.z, 1.0f }, norm, tex });
 	}
 
 	printf("\n---\n\n");
@@ -1111,6 +1212,17 @@ int main() {
 	//uboVS.view_matrix = glm::lookAt(glm::vec3(0, 0, 2), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0)); //cube
 	uboVS.view_matrix = glm::lookAt(glm::vec3(-90, 50, 0), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0)); //couch
 	uboVS.model_matrix = glm::mat4();
+
+	// Textures
+	std::vector<std::string> texture_paths;
+	/*texture_paths.push_back("../meshes/cube/default.png");
+	texture_paths.push_back("../meshes/cube/tounge.png");*/
+	texture_paths.push_back("../meshes/couch/T_Couch_Mask.TGA");
+	texture_paths.push_back("../meshes/couch/T_Leather_N.TGA");
+	texture_paths.push_back("../meshes/couch/T_Couch_N.TGA");
+	texture_paths.push_back("../meshes/couch/T_Couch_AO.TGA");
+	texture_paths.push_back("../meshes/couch/T_Leather_S.TGA");
+	texture_paths.push_back("../meshes/couch/T_Leather_D.TGA");
 
 	// Initialize GLFW
 	GLFWwindow* window = init_glfw();
@@ -1663,7 +1775,7 @@ int main() {
 	);
 
 	// Set up descriptor pool
-	size_t num_textures = 2;
+	size_t num_textures = texture_paths.size();
 	std::vector<vk::DescriptorPoolSize> descriptor_pool_sizes;
 	descriptor_pool_sizes.push_back(vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, 1));
 	descriptor_pool_sizes.push_back(vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, (uint32_t)num_textures));
@@ -1696,24 +1808,17 @@ int main() {
 			nullptr
 		)
 	);
-	layout_bindings.push_back(
-		vk::DescriptorSetLayoutBinding(
-			1,
-			vk::DescriptorType::eCombinedImageSampler,
-			1,
-			vk::ShaderStageFlags(vk::ShaderStageFlagBits::eFragment),
-			nullptr
-		)
-	);
-	layout_bindings.push_back(
-		vk::DescriptorSetLayoutBinding(
-			2,
-			vk::DescriptorType::eCombinedImageSampler,
-			1,
-			vk::ShaderStageFlags(vk::ShaderStageFlagBits::eFragment),
-			nullptr
-		)
-	);
+	for (int k = 0; k < num_textures; k++) { // Fragment shader textures
+		layout_bindings.push_back(
+			vk::DescriptorSetLayoutBinding(
+				1+k,
+				vk::DescriptorType::eCombinedImageSampler,
+				1,
+				vk::ShaderStageFlags(vk::ShaderStageFlagBits::eFragment),
+				nullptr
+			)
+		);
+	}
 
 	vk::DescriptorSetLayoutCreateInfo descriptor_set_layout_create_info(
 		vk::DescriptorSetLayoutCreateFlags(),
@@ -1903,10 +2008,6 @@ int main() {
 	);
 
 	// Create texture samplers (currently assumes all textures are set up with the same properties)
-	std::vector<std::string> texture_paths;
-	texture_paths.push_back("../meshes/cube/default.png");
-	texture_paths.push_back("../meshes/cube/tounge.png");
-
 	std::vector<vk::Image> texture_images(num_textures);
 	std::vector<vk::DeviceMemory> texture_image_memorys(num_textures);
 	std::vector<vk::ImageView> texture_image_views(num_textures);
