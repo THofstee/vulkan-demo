@@ -815,6 +815,64 @@ void print_surface_capabilities(const vk::PhysicalDevice& physical_device, const
 }
 
 /*****************************************************************************
+* TEXTURE FUNCTIONS
+******************************************************************************/
+std::vector<std::vector<unsigned char>> generate_mipmaps(unsigned char* texture, int texture_width, int texture_height) {
+	int maxlevel = std::floor(std::log2(std::max(texture_width, texture_height)));
+	std::vector<std::vector<unsigned char>> mipmaps(maxlevel+1);
+	printf("maxlevel: %d\n", maxlevel);
+
+	// Initialize mipmaps[0] with base texture
+	mipmaps.at(0).resize(texture_width * texture_height);
+	memcpy(mipmaps.at(0).data(), texture, texture_width * texture_height);
+
+	int last_height, last_width;
+	for (int l = 1; l < mipmaps.size(); l++) {
+		last_height = texture_height;
+		last_width = texture_width;
+		texture_width = std::max(1, texture_width >> 1);
+		texture_height = std::max(1, texture_height >> 1);
+		mipmaps.at(l).resize(texture_width * texture_height);
+
+		printf("level %d: width: %d height: %d\n", l, texture_width, texture_height);
+		for (int y = 0; y < texture_height; y++) {
+			for (int x = 0; x < texture_width; x++) {
+				int idx = y * texture_width + x;
+
+				float w0xs, w0xe, w2xs, w2xe, w0ys, w0ye, w2ys, w2ye;
+
+				if (last_width & 1) {
+					w0xs = w2xe = (float)texture_width / (float)last_width;
+					w0xe = w2xs = 1.0f / (float)last_width;
+				}
+				else {
+					w0xs = w0xe = 0.5f;
+					w2xs = w2xe = 0.0f;
+				}
+
+				if (last_height & 1) {
+					w0ys = w2ye = (float)texture_height / (float)last_height;
+					w0ye = w2ys = 1.0f / (float)last_height;
+				}
+				else {
+					w0ys = w0ye = 0.5f;
+					w2ys = w2ye = 0.0f;
+				}
+
+				float w1x = w0xs;
+				float w1y = w0ys;
+
+				//mipmaps.at(l).at(idx) = w0*mipmaps.at(l - 1).at();
+
+				//mipmaps.at(l).at(idx) = 0.25 * (mipmaps.at(l-1).at(2*y))
+			}
+		}
+	}
+
+	return mipmaps;
+}
+
+/*****************************************************************************
 * VERTEX TEST FUNCTIONS
 ******************************************************************************/
 
@@ -1324,6 +1382,35 @@ int main() {
 	// Get Physical Device Color Format and Space
 	vk::Format colorFormat;
 	std::vector<vk::SurfaceFormatKHR> surfaceFormats = physical_device.getSurfaceFormatsKHR(surface);
+
+	// Print out device format properties
+	for (int f = 0; f < surfaceFormats.size(); f++) {
+		vk::FormatProperties formatProperties = physical_device.getFormatProperties(surfaceFormats.at(f).format);
+		printf("Format: %s\n", to_string(surfaceFormats.at(f).format).c_str());
+		printf("\tBuffer Features: %s\n", to_string(formatProperties.bufferFeatures).c_str());
+		printf("\tLinear Tiling Features: %s\n", to_string(formatProperties.linearTilingFeatures).c_str());
+		printf("\tOptimal Tiling Features: %s\n", to_string(formatProperties.optimalTilingFeatures).c_str());
+		printf("\n");
+
+		vk::ImageFormatProperties linearImageFormatProperties = physical_device.getImageFormatProperties(surfaceFormats.at(f).format, vk::ImageType::e2D, vk::ImageTiling::eLinear, vk::ImageUsageFlags(vk::ImageUsageFlagBits::eSampled), vk::ImageCreateFlags());
+		vk::ImageFormatProperties optimalImageFormatProperties = physical_device.getImageFormatProperties(surfaceFormats.at(f).format, vk::ImageType::e2D, vk::ImageTiling::eOptimal, vk::ImageUsageFlags(vk::ImageUsageFlagBits::eSampled), vk::ImageCreateFlags());
+
+		printf("\t2D Linear Sampled Image Properties:\n");
+		printf("\t\tMax Extent: %d %d %d\n", linearImageFormatProperties.maxExtent.width, linearImageFormatProperties.maxExtent.height, linearImageFormatProperties.maxExtent.depth);
+		printf("\t\tMax Mip Levels: %d\n", linearImageFormatProperties.maxMipLevels);
+		printf("\t\tMax Array Layers: %d\n", linearImageFormatProperties.maxArrayLayers);
+		printf("\t\tSample Count Flags: %s\n", to_string(linearImageFormatProperties.sampleCounts).c_str());
+		printf("\t\tMax Resource Size: %d\n", linearImageFormatProperties.maxResourceSize);
+		printf("\n");
+
+		printf("\t2D Optimal Sampled Image Properties:\n");
+		printf("\t\tMax Extent: %d %d %d\n", optimalImageFormatProperties.maxExtent.width, optimalImageFormatProperties.maxExtent.height, optimalImageFormatProperties.maxExtent.depth);
+		printf("\t\tMax Mip Levels: %d\n", optimalImageFormatProperties.maxMipLevels);
+		printf("\t\tMax Array Layers: %d\n", optimalImageFormatProperties.maxArrayLayers);
+		printf("\t\tSample Count Flags: %s\n", to_string(optimalImageFormatProperties.sampleCounts).c_str());
+		printf("\t\tMax Resource Size: %d\n", optimalImageFormatProperties.maxResourceSize);
+		printf("\n");
+	}
 
 	if ((surfaceFormats.size() == 1) && (surfaceFormats.at(0).format == vk::Format::eUndefined)) {
 		colorFormat = vk::Format::eB8G8R8A8Unorm;
@@ -2058,6 +2145,10 @@ int main() {
 		int texture_width, texture_height, texture_comp;
 		unsigned char* texture = stbi_load(texture_paths.at(k).c_str(), &texture_width, &texture_height, &texture_comp, 4);
 
+		generate_mipmaps(texture, texture_width, texture_height);
+
+		int maxlevel = std::floor(std::log2(std::max(texture_width, texture_height)));
+
 		vk::ImageCreateInfo texture_image_create_info(
 			vk::ImageCreateFlags(),
 			vk::ImageType::e2D,
@@ -2196,8 +2287,8 @@ int main() {
 			vk::SamplerAddressMode::eRepeat,
 			vk::SamplerAddressMode::eRepeat,
 			0.0f,
-			VK_FALSE,
-			0,
+			VK_TRUE,
+			8,
 			VK_FALSE,
 			vk::CompareOp::eNever,
 			0.0f,
