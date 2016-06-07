@@ -25,8 +25,8 @@
 #define DEBUG true
 #define DEBUG_CLEANUP true
 
-#define WIDTH  1920
-#define HEIGHT 1080
+#define WIDTH  640
+#define HEIGHT 480
 #define VSYNC false
 
 // I don't want windows.h
@@ -115,7 +115,43 @@ struct vertex {
 * SHADERS
 ******************************************************************************/
 
-std::string vertShaderText =
+std::string simpleVertShaderText =
+R"vertexShader(
+#version 440
+layout(location = 0) in vec3 pos;
+layout(location = 1) in vec4 col;
+layout(location = 2) in vec3 norm;
+layout(location = 3) in vec2 tex;
+layout(location = 1) out vec4 Col;
+layout(location = 3) out vec2 Tex;
+layout(binding = 0) uniform UBO
+{
+	mat4 proj;
+	mat4 view;
+	mat4 model;
+} ubo;
+void main() {
+	vec3 lightdir = normalize(vec3(-.3, -.4, -.6));
+	Col = col * clamp(dot((ubo.model * vec4(norm, 1.0)).xyz, -lightdir), 0.0, 1.0);
+	Tex = tex;
+	gl_Position = ubo.proj * ubo.view * ubo.model * vec4(pos, 1.0);
+}
+)vertexShader";
+
+std::string simpleFragShaderText =
+R"fragmentShader(
+#version 440
+layout(location = 1) in vec4 col;
+layout(location = 3) in vec2 texcoord;
+layout(location = 0) out vec4 out_Color;
+layout(binding = 1) uniform sampler2D tex;
+layout(binding = 2) uniform sampler2D tex2;
+void main() {
+  out_Color =  texture(tex, texcoord) * texture(tex2, texcoord) * col;
+}
+)fragmentShader";
+
+std::string couchVertShaderText =
 R"vertexShader(
 #version 440
 
@@ -144,7 +180,7 @@ void main() {
 }
 )vertexShader";
 
-std::string fragShaderText =
+std::string couchFragShaderText =
 R"fragmentShader(
 #version 440
 
@@ -1223,6 +1259,10 @@ int main() {
 	texture_paths.push_back("../meshes/couch/T_Couch_AO.TGA");
 	texture_paths.push_back("../meshes/couch/T_Leather_S.TGA");
 	texture_paths.push_back("../meshes/couch/T_Leather_D.TGA");
+
+	// Shaders
+	std::string vertShaderText = couchVertShaderText;
+	std::string fragShaderText = couchFragShaderText;
 
 	// Initialize GLFW
 	GLFWwindow* window = init_glfw();
@@ -2520,7 +2560,7 @@ int main() {
 	// Render Loop
 	quit = false;
 	do {
-		glm::vec3 camera_pos = glm::vec3(1.0f, 1.0f, 2.0f);
+		glm::vec3 camera_pos = glm::vec3(-90, 50, 0);
 		glm::vec3 camera_target = glm::vec3(0.0f, 0.0f, 0.0f);
 		glm::vec3 camera_direction = glm::normalize(camera_pos - camera_target);
 		glm::vec3 camera_right = glm::normalize(glm::cross(glm::vec3(0.0f, 1.0f, 0.0f), camera_direction));
@@ -2533,7 +2573,7 @@ int main() {
 			glfwSetWindowShouldClose(window, 1);
 			quit = true;
 		}
-		else if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS) {
+		if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS) {
 			uboVS.model_matrix = glm::rotate(0.0004f, glm::vec3(0.0f, 1.0f, 0.0f)) * uboVS.model_matrix;
 			update_memory(device, uniform_buffer_device_memory, &uboVS, sizeof(uboVS));
 		}
@@ -2541,12 +2581,28 @@ int main() {
 			uboVS.model_matrix = glm::rotate(-0.0004f, glm::vec3(0.0f, 1.0f, 0.0f)) * uboVS.model_matrix;
 			update_memory(device, uniform_buffer_device_memory, &uboVS, sizeof(uboVS));
 		}
-		else if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS) {
-			uboVS.model_matrix = glm::rotate(-0.0004f, camera_right) * uboVS.model_matrix;
+		if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS) {
+			uboVS.model_matrix = glm::rotate(0.0004f, camera_right) * uboVS.model_matrix;
 			update_memory(device, uniform_buffer_device_memory, &uboVS, sizeof(uboVS));
 		}
 		else if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS) {
-			uboVS.model_matrix = glm::rotate(0.0004f, camera_right) * uboVS.model_matrix;
+			uboVS.model_matrix = glm::rotate(-0.0004f, camera_right) * uboVS.model_matrix;
+			update_memory(device, uniform_buffer_device_memory, &uboVS, sizeof(uboVS));
+		}
+		if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
+			uboVS.view_matrix = glm::translate(uboVS.view_matrix, (glm::vec3(-90, 50, 0) - glm::vec3(0, 0, 0)) * 0.004f);
+			update_memory(device, uniform_buffer_device_memory, &uboVS, sizeof(uboVS));
+		}
+		else if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
+			uboVS.view_matrix = glm::translate(uboVS.view_matrix, (glm::vec3(-90, 50, 0) - glm::vec3(0, 0, 0)) * -0.004f);
+			update_memory(device, uniform_buffer_device_memory, &uboVS, sizeof(uboVS));
+		}
+		if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
+			uboVS.view_matrix = glm::translate(uboVS.view_matrix, cross((glm::vec3(-90, 50, 0) - glm::vec3(0, 0, 0)), camera_up) * -0.004f);
+			update_memory(device, uniform_buffer_device_memory, &uboVS, sizeof(uboVS));
+		}
+		else if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) {
+			uboVS.view_matrix = glm::translate(uboVS.view_matrix, cross((glm::vec3(-90, 50, 0) - glm::vec3(0, 0, 0)), camera_up)  * 0.004f);
 			update_memory(device, uniform_buffer_device_memory, &uboVS, sizeof(uboVS));
 		}
 
