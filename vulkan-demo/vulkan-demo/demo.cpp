@@ -1888,6 +1888,388 @@ void create_samplers_blit_mipmaps(
 	device.destroyCommandPool(mipmap_command_pool);
 }
 
+// Create debug mipmap using cpu
+void create_samplers_debug_mipmaps(
+	vk::PhysicalDevice& physical_device,
+	vk::Device& device,
+	std::vector<std::string>& texture_paths,
+	std::vector<vk::Image>& texture_images,
+	std::vector<vk::DeviceMemory>& texture_image_memorys,
+	std::vector<vk::ImageView>& texture_image_views,
+	std::vector<vk::Sampler>& texture_samplers,
+	std::vector<vk::DescriptorImageInfo>& texture_descriptors) {
+	int num_textures = texture_paths.size();
+
+	// Create command buffer memory pool
+	vk::CommandPoolCreateInfo mipmap_cmd_pool_create_info(
+		vk::CommandPoolCreateFlags(vk::CommandPoolCreateFlagBits::eResetCommandBuffer),
+		0
+	);
+
+	vk::CommandPool mipmap_command_pool;
+	try {
+		mipmap_command_pool = device.createCommandPool(mipmap_cmd_pool_create_info);
+	}
+	catch (const std::system_error& e) {
+		fprintf(stderr, "Vulkan failure: %s\n", e.what());
+		system("pause");
+		exit(-1);
+	}
+
+	// Setup command buffer allocation info
+	vk::CommandBufferAllocateInfo mipmap_cmd_buffer_allocate_info(
+		mipmap_command_pool,
+		vk::CommandBufferLevel::ePrimary,
+		(uint32_t)1
+	);
+
+	// Create setup command buffers
+	std::vector<vk::CommandBuffer> mipmap_command_buffers;
+	try {
+		mipmap_command_buffers = device.allocateCommandBuffers(mipmap_cmd_buffer_allocate_info);
+	}
+	catch (const std::system_error& e) {
+		fprintf(stderr, "Vulkan failure: %s\n", e.what());
+		system("pause");
+		exit(-1);
+	}
+	vk::CommandBuffer mipmap_command_buffer = mipmap_command_buffers.at(0);
+
+	// Iterate though textures
+	for (int k = 0; k < num_textures; k++) {
+		int texture_width, texture_height, texture_comp;
+		unsigned char* texture = stbi_load(texture_paths.at(k).c_str(), &texture_width, &texture_height, &texture_comp, 4);
+		int maxlevel = (int)std::floor(std::log2(std::max(texture_width, texture_height))) + 1;
+
+		// Create a staging image and copy the texture to it
+		vk::BufferCreateInfo staging_buffer_create_info(
+			vk::BufferCreateFlags(),
+			std::min(texture_width, texture_height)*1.5f * std::max(texture_width, texture_height) * 4, // check for errors
+			vk::BufferUsageFlags(vk::BufferUsageFlagBits::eTransferSrc),
+			vk::SharingMode::eExclusive,
+			-1,
+			nullptr
+		);
+
+		vk::Buffer staging_buffer;
+		try {
+			staging_buffer = device.createBuffer(staging_buffer_create_info);
+		}
+		catch (const std::system_error& e) {
+			fprintf(stderr, "Vulkan failure: %s\n", e.what());
+			system("pause");
+			exit(-1);
+		}
+
+		vk::MemoryRequirements staging_memory_requirements;
+		try {
+			staging_memory_requirements = device.getBufferMemoryRequirements(staging_buffer);
+		}
+		catch (const std::system_error& e) {
+			fprintf(stderr, "Vulkan failure: %s\n", e.what());
+			system("pause");
+			exit(-1);
+		}
+
+		uint32_t staging_memory_type_index = get_memory_type(physical_device, staging_memory_requirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eHostVisible);
+
+		vk::MemoryAllocateInfo staging_memory_allocate_info(
+			staging_memory_requirements.size,
+			staging_memory_type_index
+		);
+
+		vk::DeviceMemory staging_memory;
+		try {
+			staging_memory = device.allocateMemory(staging_memory_allocate_info);
+		}
+		catch (const std::system_error& e) {
+			fprintf(stderr, "Vulkan failure: %s\n", e.what());
+			system("pause");
+			exit(-1);
+		}
+
+		try {
+			device.bindBufferMemory(staging_buffer, staging_memory, (vk::DeviceSize)0);
+		}
+		catch (const std::system_error& e) {
+			fprintf(stderr, "Vulkan failure: %s\n", e.what());
+			system("pause");
+			exit(-1);
+		}
+
+		// copy texture to staging buffer and create buffer copy regions
+		void* staging_mapped_memory;
+		try {
+			staging_mapped_memory = device.mapMemory(staging_memory, 0, VK_WHOLE_SIZE, vk::MemoryMapFlags());
+		}
+		catch (const std::system_error& e) {
+			fprintf(stderr, "Vulkan failure: %s\n", e.what());
+			system("pause");
+			exit(-1);
+		}
+
+		int red = { 255 << 24 | 0 << 16 | 0 << 8 | 255 };
+		int green = { 255 << 24 | 0 << 16 | 255 << 8 | 0 };
+		int blue = { 255 << 24 | 255 << 16 | 0 << 8 | 0 };
+		int magenta = { 255 << 24 | 255 << 16 | 0 << 8 | 255 };
+		int yellow = { 255 << 24 | 0 << 16 | 255 << 8 | 255 };
+		int cyan = { 255 << 24 | 255 << 16 | 255 << 8 | 0 };
+		int colors[6] = { red, magenta, blue, cyan, green, yellow };
+
+		int offset = 0;
+		std::vector<vk::BufferImageCopy> buffer_copy_regions;
+		for (int l = 0; l < maxlevel; l++) {
+			for (int k = 0; k < std::max(1, texture_height >> l) * std::max(1, texture_width >> l) * 4; k += 4) {
+				*reinterpret_cast<int*>(&reinterpret_cast<char*>(staging_mapped_memory)[k + offset]) = colors[l%6];
+			}
+
+			buffer_copy_regions.push_back(
+				vk::BufferImageCopy(
+					offset,
+					0,
+					0,
+					vk::ImageSubresourceLayers(
+						vk::ImageAspectFlags(vk::ImageAspectFlagBits::eColor),
+						l,
+						0,
+						1
+					),
+					vk::Offset3D(),
+					vk::Extent3D(
+						std::max(1, texture_width >> l),
+						std::max(1, texture_height >> l),
+						1
+					)
+				)
+			);
+
+			offset += std::max(1, texture_height >> l) * std::max(1, texture_width >> l) * 4;
+		}
+
+		try {
+			device.unmapMemory(staging_memory);
+		}
+		catch (const std::system_error& e) {
+			fprintf(stderr, "Vulkan failure: %s\n", e.what());
+			system("pause");
+			exit(-1);
+		}
+
+		// Create device local texture image
+		vk::ImageCreateInfo texture_image_create_info(
+			vk::ImageCreateFlags(),
+			vk::ImageType::e2D,
+			vk::Format::eB8G8R8A8Unorm,
+			vk::Extent3D(texture_width, texture_height, 1),
+			maxlevel,
+			1,
+			vk::SampleCountFlagBits::e1,
+			vk::ImageTiling::eOptimal,
+			vk::ImageUsageFlags(vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled),
+			vk::SharingMode::eExclusive,
+			0,
+			nullptr,
+			vk::ImageLayout::ePreinitialized
+		);
+
+		try {
+			texture_images.at(k) = device.createImage(texture_image_create_info);
+		}
+		catch (const std::system_error& e) {
+			fprintf(stderr, "Vulkan failure: %s\n", e.what());
+			system("pause");
+			exit(-1);
+		}
+
+		vk::MemoryRequirements texture_memory_requirements;
+		try {
+			texture_memory_requirements = device.getImageMemoryRequirements(texture_images.at(k));
+		}
+		catch (const std::system_error& e) {
+			fprintf(stderr, "Vulkan failure: %s\n", e.what());
+			system("pause");
+			exit(-1);
+		}
+
+		uint32_t texture_memory_type_index = get_memory_type(physical_device, texture_memory_requirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal);
+
+		vk::MemoryAllocateInfo texture_memory_allocate_info(
+			texture_memory_requirements.size,
+			texture_memory_type_index
+		);
+
+		try {
+			texture_image_memorys.at(k) = device.allocateMemory(texture_memory_allocate_info);
+		}
+		catch (const std::system_error& e) {
+			fprintf(stderr, "Vulkan failure: %s\n", e.what());
+			system("pause");
+			exit(-1);
+		}
+
+		try {
+			device.bindImageMemory(texture_images.at(k), texture_image_memorys.at(k), (vk::DeviceSize)0);
+		}
+		catch (const std::system_error& e) {
+			fprintf(stderr, "Vulkan failure: %s\n", e.what());
+			system("pause");
+			exit(-1);
+		}
+
+		vk::CommandBufferBeginInfo mipmap_cmd_buffer_begin_info(
+			vk::CommandBufferUsageFlags(vk::CommandBufferUsageFlagBits::eOneTimeSubmit),
+			nullptr
+		);
+
+		mipmap_command_buffer.begin(mipmap_cmd_buffer_begin_info);
+		{
+			// Convert texture_image layout
+			vk::ImageSubresourceRange texture_image_subresource_range(
+				vk::ImageAspectFlags(vk::ImageAspectFlagBits::eColor),
+				0,
+				maxlevel,
+				0,
+				1
+			);
+
+			vk::ImageMemoryBarrier texture_transition_barrier(
+				vk::AccessFlags(vk::AccessFlagBits::eHostWrite),
+				vk::AccessFlags(vk::AccessFlagBits::eTransferWrite),
+				vk::ImageLayout::ePreinitialized,
+				vk::ImageLayout::eTransferDstOptimal,
+				VK_QUEUE_FAMILY_IGNORED,
+				VK_QUEUE_FAMILY_IGNORED,
+				texture_images.at(k),
+				texture_image_subresource_range
+			);
+
+			mipmap_command_buffer.pipelineBarrier(
+				vk::PipelineStageFlags(vk::PipelineStageFlagBits::eTopOfPipe),
+				vk::PipelineStageFlags(vk::PipelineStageFlagBits::eTopOfPipe),
+				vk::DependencyFlags(),
+				nullptr,
+				nullptr,
+				texture_transition_barrier
+			);
+
+			// Copy mip levels from staging buffer
+			mipmap_command_buffer.copyBufferToImage(
+				staging_buffer,
+				texture_images.at(k),
+				vk::ImageLayout::eTransferDstOptimal,
+				buffer_copy_regions
+			);
+
+			// Convert texture_image layout to shader optimal
+			vk::ImageMemoryBarrier texture_shader_barrier(
+				vk::AccessFlags(vk::AccessFlagBits::eTransferWrite),
+				vk::AccessFlags(vk::AccessFlagBits::eShaderRead),
+				vk::ImageLayout::eTransferDstOptimal,
+				vk::ImageLayout::eShaderReadOnlyOptimal,
+				VK_QUEUE_FAMILY_IGNORED,
+				VK_QUEUE_FAMILY_IGNORED,
+				texture_images.at(k),
+				texture_image_subresource_range
+			);
+
+			mipmap_command_buffer.pipelineBarrier(
+				vk::PipelineStageFlags(vk::PipelineStageFlagBits::eTopOfPipe),
+				vk::PipelineStageFlags(vk::PipelineStageFlagBits::eTopOfPipe),
+				vk::DependencyFlags(),
+				nullptr,
+				nullptr,
+				texture_shader_barrier
+			);
+		}
+		mipmap_command_buffer.end();
+
+		vk::PipelineStageFlags mipmap_wait_stage = vk::PipelineStageFlags(vk::PipelineStageFlagBits::eColorAttachmentOutput);
+
+		vk::SubmitInfo mipmap_submit_info(
+			0,
+			nullptr,
+			&mipmap_wait_stage,
+			1,
+			&mipmap_command_buffer,
+			0,
+			nullptr
+		);
+
+		vk::FenceCreateInfo mipmap_fence_create_info;
+
+		vk::Fence mipmap_fence = device.createFence(mipmap_fence_create_info);
+
+		vk::Queue present_queue = device.getQueue(0, 0);
+		present_queue.submit(mipmap_submit_info, mipmap_fence);
+
+		device.waitForFences(mipmap_fence, VK_TRUE, UINT64_MAX);
+		device.resetFences(mipmap_fence);
+		mipmap_command_buffer.reset(vk::CommandBufferResetFlags());
+
+		vk::ImageViewCreateInfo texture_image_view_create_info(
+			vk::ImageViewCreateFlags(),
+			texture_images.at(k),
+			vk::ImageViewType::e2D,
+			vk::Format::eB8G8R8A8Unorm,
+			vk::ComponentMapping(vk::ComponentSwizzle::eB, vk::ComponentSwizzle::eG, vk::ComponentSwizzle::eR, vk::ComponentSwizzle::eA),
+			vk::ImageSubresourceRange(
+				vk::ImageAspectFlags(vk::ImageAspectFlagBits::eColor),
+				0,
+				maxlevel,
+				0,
+				1
+			)
+		);
+
+		try {
+			texture_image_views.at(k) = device.createImageView(texture_image_view_create_info);
+		}
+		catch (const std::system_error& e) {
+			fprintf(stderr, "Vulkan failure: %s\n", e.what());
+			system("pause");
+			exit(-1);
+		}
+
+		vk::SamplerCreateInfo texture_sampler_create_info(
+			vk::SamplerCreateFlags(),
+			vk::Filter::eLinear,
+			vk::Filter::eLinear,
+			vk::SamplerMipmapMode::eLinear,
+			vk::SamplerAddressMode::eRepeat,
+			vk::SamplerAddressMode::eRepeat,
+			vk::SamplerAddressMode::eRepeat,
+			0.0f,
+			VK_TRUE,
+			16,
+			VK_FALSE,
+			vk::CompareOp::eNever,
+			0.0f,
+			(float)maxlevel,
+			vk::BorderColor::eFloatOpaqueWhite,
+			VK_FALSE
+		);
+
+		try {
+			texture_samplers.at(k) = device.createSampler(texture_sampler_create_info);
+		}
+		catch (const std::system_error& e) {
+			fprintf(stderr, "Vulkan failure: %s\n", e.what());
+			system("pause");
+			exit(-1);
+		}
+
+		texture_descriptors.at(k) = vk::DescriptorImageInfo(
+			texture_samplers.at(k),
+			texture_image_views.at(k),
+			vk::ImageLayout::eGeneral
+		);
+	}
+
+	// Free command buffers and pool
+	device.freeCommandBuffers(mipmap_command_pool, mipmap_command_buffers);
+	device.destroyCommandPool(mipmap_command_pool);
+}
+
 /*****************************************************************************
 * VERTEX TEST FUNCTIONS
 ******************************************************************************/
@@ -2320,9 +2702,9 @@ int main() {
 	// Vertices
 	std::vector<vertex> vertices;
 	//vertices = test_quad();
-	//vertices = test_lod();
+	vertices = test_lod();
 	//vertices = load_obj("../meshes/cube/cube.obj", "../meshes/cube/");
-	vertices = load_vtx("../meshes/couch/couch.vtx");
+	//vertices = load_vtx("../meshes/couch/couch.vtx");
 
 	// Uniforms
 	struct {
@@ -2331,31 +2713,31 @@ int main() {
 		glm::mat4 model_matrix;
 	} uboVS;
 
-	uboVS.projection_matrix = glm::perspective(glm::radians(60.0f), (float)WIDTH / (float)HEIGHT, 1.0f, 512.0f); // general
-	//uboVS.projection_matrix = glm::infinitePerspective(glm::radians(60.0f), (float)WIDTH / (float)HEIGHT, 1.0f); // lod testing
+	//uboVS.projection_matrix = glm::perspective(glm::radians(60.0f), (float)WIDTH / (float)HEIGHT, 1.0f, 512.0f); // general
+	uboVS.projection_matrix = glm::infinitePerspective(glm::radians(60.0f), (float)WIDTH / (float)HEIGHT, 1.0f); // lod testing
 	//uboVS.view_matrix = glm::lookAt(glm::vec3(0, 100, 250), glm::vec3(0, 100, 0), glm::vec3(0, -1, 0)); //sackboy
-	//uboVS.view_matrix = glm::lookAt(glm::vec3(0, 0, 2), glm::vec3(0, 0, 0), glm::vec3(0, -1, 0)); //cube
-	uboVS.view_matrix = glm::lookAt(glm::vec3(-90, 50, 0), glm::vec3(0, 0, 0), glm::vec3(0, -1, 0)); //couch
+	uboVS.view_matrix = glm::lookAt(glm::vec3(0, 0, 2), glm::vec3(0, 0, 0), glm::vec3(0, -1, 0)); //cube
+	//uboVS.view_matrix = glm::lookAt(glm::vec3(-90, 50, 0), glm::vec3(0, 0, 0), glm::vec3(0, -1, 0)); //couch
 	uboVS.model_matrix = glm::mat4();
 
 	// Textures
 	std::vector<std::string> texture_paths;
-	//texture_paths.push_back("../meshes/cube/checker.jpg");
+	texture_paths.push_back("../meshes/cube/checker.jpg");
 	//texture_paths.push_back("../meshes/cube/default.png");
 	//texture_paths.push_back("../meshes/cube/tounge.png");
-	texture_paths.push_back("../meshes/couch/T_Couch_Mask.TGA");
-	texture_paths.push_back("../meshes/couch/T_Leather_N.TGA");
-	texture_paths.push_back("../meshes/couch/T_Couch_N.TGA");
-	texture_paths.push_back("../meshes/couch/T_Couch_AO.TGA");
-	texture_paths.push_back("../meshes/couch/T_Leather_S.TGA");
-	texture_paths.push_back("../meshes/couch/T_Leather_D.TGA");
+	//texture_paths.push_back("../meshes/couch/T_Couch_Mask.TGA");
+	//texture_paths.push_back("../meshes/couch/T_Leather_N.TGA");
+	//texture_paths.push_back("../meshes/couch/T_Couch_N.TGA");
+	//texture_paths.push_back("../meshes/couch/T_Couch_AO.TGA");
+	//texture_paths.push_back("../meshes/couch/T_Leather_S.TGA");
+	//texture_paths.push_back("../meshes/couch/T_Leather_D.TGA");
 
 	// Shaders
-	//std::string vertShaderText = simpleVertShaderText;
+	std::string vertShaderText = simpleVertShaderText;
 	//std::string fragShaderText = simpleFragShaderText;
-	//std::string fragShaderText = lodFragShaderText;
-	std::string vertShaderText = couchVertShaderText;
-	std::string fragShaderText = couchFragShaderText;
+	std::string fragShaderText = lodFragShaderText;
+	//std::string vertShaderText = couchVertShaderText;
+	//std::string fragShaderText = couchFragShaderText;
 
 	// Initialize GLFW
 	GLFWwindow* window = init_glfw();
@@ -3196,7 +3578,8 @@ int main() {
 
 	//create_samplers_no_mipmaps(physical_device, device, texture_paths, texture_images, texture_image_memorys, texture_image_views, texture_samplers, texture_descriptors);
 	//create_samplers_cpu_mipmaps(physical_device, device, texture_paths, texture_images, texture_image_memorys, texture_image_views, texture_samplers, texture_descriptors);
-	create_samplers_blit_mipmaps(physical_device, device, texture_paths, texture_images, texture_image_memorys, texture_image_views, texture_samplers, texture_descriptors);
+	//create_samplers_blit_mipmaps(physical_device, device, texture_paths, texture_images, texture_image_memorys, texture_image_views, texture_samplers, texture_descriptors);
+	create_samplers_debug_mipmaps(physical_device, device, texture_paths, texture_images, texture_image_memorys, texture_image_views, texture_samplers, texture_descriptors);
 
 	// Create descriptor set
 	vk::DescriptorSetAllocateInfo descriptor_set_allocate_info(
