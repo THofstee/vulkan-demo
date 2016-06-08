@@ -244,3 +244,4 @@ ModelManifest.xml
 # FAKE - F# Make
 .fake/
 /vulkan-demo/meshes
+/vulkan-demo/mipmaps
