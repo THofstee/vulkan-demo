@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <vector>
 #include <random>
+#include <chrono>
 
 #include <vulkan/vulkan.h>
 #include "vk_cpp.hpp"
@@ -961,6 +962,7 @@ std::vector<std::vector<unsigned char>> generate_mipmaps(unsigned char* texture,
 		D_(stbi_write_png(("../mipmaps/" + texname + "-" + std::to_string(l) + ".png").c_str(), texture_width, texture_height, 4, mipmaps.at(l).data(), 4 * texture_width));
 	}
 
+	printf("\n---\n\n");
 	return mipmaps;
 }
 
@@ -3962,6 +3964,8 @@ int main() {
 	// Render Loop
 	quit = false;
 	do {
+		std::chrono::high_resolution_clock::time_point render_start = std::chrono::high_resolution_clock::now();
+
 		glm::vec3 camera_pos = uboVS.camera_pos;
 		glm::vec3 camera_target = glm::vec3(0.0f, 0.0f, 0.0f);
 		glm::vec3 camera_direction = glm::normalize(camera_pos - camera_target);
@@ -4070,7 +4074,12 @@ int main() {
 			system("pause");
 			exit(-1);
 		}
+
+		std::chrono::high_resolution_clock::time_point  render_finish = std::chrono::high_resolution_clock::now();
+		std::chrono::duration<double, std::milli> render_time = render_finish - render_start;
+		printf("Render time: %.2fms (%llu FPS)\r", render_time.count(), (int)(1000.0f/render_time.count()));
 	} while (!quit);
+	printf("\n");
 
 	if (glfwWindowShouldClose(window)) {
 		glfwDestroyWindow(window);
