@@ -165,7 +165,7 @@ R"vertexShader(
 #version 440
 
 layout(location = 0) in vec3 pos;
-layout(location = 1) in vec4 tan;
+layout(location = 1) in vec4 tang;
 layout(location = 2) in vec3 norm;
 layout(location = 3) in vec2 tex;
 
@@ -181,8 +181,8 @@ layout(binding = 0) uniform UBO
 } ubo;
 
 void main() {
-	Tan = tan.xyz;
-	Norm = norm;
+	Tan = (ubo.model * vec4(tang.xyz, 0.0)).xyz;
+	Norm = (ubo.model * vec4(norm, 0.0)).xyz;
 	Tex = tex;
 
 	gl_Position = ubo.proj * ubo.view * ubo.model * vec4(pos, 1.0);
@@ -224,9 +224,45 @@ vec3 TangentSpaceTransform(vec3 normal_in) {
 	return normalize(normal_in.x * vTangent + normal_in.y * vBiTangent + normal_in.z * vNormal);
 }
 
+float Pow4(float x)
+{
+    return (x*x)*(x*x);
+}
+
+vec2 LightingFuncGGX_FV(float dotLH, float roughness)
+{
+    float alpha = roughness*roughness;/*sf*/
+
+    // F
+    float F_a, F_b;
+    float dotLH5 = Pow4(1.0-dotLH) * (1.0 - dotLH);
+    F_a = 1.0;
+    F_b = dotLH5;
+
+    // V
+    float vis;
+    float k = alpha/2.0;
+    float k2 = k*k;
+    float invK2 = 1.0-k2;
+    vis = 1.0/(dotLH*dotLH*invK2 + k2);
+
+    return vec2(F_a*vis, F_b*vis);
+}
+
+float LightingFuncGGX_D(float dotNH, float roughness)
+{
+    float alpha = roughness*roughness;
+    float alphaSqr = alpha*alpha;
+    float pi = 3.14159;
+    float denom = dotNH * dotNH *(alphaSqr-1.0) + 1.0;
+
+    float D = alphaSqr/(pi * denom * denom);
+    return D;
+}
+
 vec3 Lighting(vec3 normal, vec3 albedo, vec3 lightParam) {
 	vec3 pos = gl_FragCoord.xyz;
-	vec3 lightDir = vec3(1.0, 1.0, 0.0);
+	vec3 lightDir = vec3(-10.0, 10.0, 0.0);
 	vec3 lightColor = vec3(0.7, 0.7, 0.6);
 	vec3 cameraPos = vec3(-90, 50, 0);
 
@@ -244,12 +280,15 @@ vec3 Lighting(vec3 normal, vec3 albedo, vec3 lightParam) {
 	float dotLH = clamp(dot(L, H), 0.01, 0.99);
 	float dotNH = clamp(dot(normal, H), 0.01, 0.99);
 
-	float alpha = roughness_in * roughness_in;
-	float p = 6.644/(alpha * alpha) - 6.644;
-	float pi = 3.14159;
-	float highlight = dotNL * exp2(p * dotNH - p) / (pi * (alpha * alpha)) * specular_in;
+	float D = LightingFuncGGX_D(dotNH,roughness_in);
+    vec2 FV_helper = LightingFuncGGX_FV(dotLH,roughness_in);
+    float FV = metallic_in*FV_helper.x + (1.0-metallic_in)*FV_helper.y;
+    float specular = dotNL * D * FV * specular_in;
+    float highlight = specular;
 
-	return lightColor * (albedo * (brightness + 0.7) * (1.0 - metallic_in) + mix(albedo, vec3(1.0), 1.0 - metallic_in) * highlight);
+	return lightColor * 
+                        (albedo * (brightness + 0.7)*(1.0-metallic_in) + 
+                        mix(albedo, vec3(1.0), 1.0 - metallic_in) * (highlight ));
 }
 
 void main() {
@@ -285,7 +324,9 @@ void main() {
 
     vec3 normalTransform = TangentSpaceTransform(normal);
 	vec3 lighting = Lighting(normalTransform, albedo, vec3(Roughness, Metallic, Specular));
-    out_Color = vec4(lighting, 1.0);
+    
+	vec3 normalVis = (normalTransform  + vec3(1.0)) / 2.0;
+	out_Color = vec4(lighting, 1.0);
 }
 )fragmentShader";
 
@@ -2702,42 +2743,44 @@ int main() {
 	// Vertices
 	std::vector<vertex> vertices;
 	//vertices = test_quad();
-	vertices = test_lod();
+	//vertices = test_lod();
 	//vertices = load_obj("../meshes/cube/cube.obj", "../meshes/cube/");
-	//vertices = load_vtx("../meshes/couch/couch.vtx");
+	vertices = load_vtx("../meshes/couch/couch.vtx");
 
 	// Uniforms
 	struct {
 		glm::mat4 projection_matrix;
 		glm::mat4 view_matrix;
 		glm::mat4 model_matrix;
+		glm::vec3 camera_pos;
 	} uboVS;
 
-	//uboVS.projection_matrix = glm::perspective(glm::radians(60.0f), (float)WIDTH / (float)HEIGHT, 1.0f, 512.0f); // general
-	uboVS.projection_matrix = glm::infinitePerspective(glm::radians(60.0f), (float)WIDTH / (float)HEIGHT, 1.0f); // lod testing
-	//uboVS.view_matrix = glm::lookAt(glm::vec3(0, 100, 250), glm::vec3(0, 100, 0), glm::vec3(0, -1, 0)); //sackboy
-	uboVS.view_matrix = glm::lookAt(glm::vec3(0, 0, 2), glm::vec3(0, 0, 0), glm::vec3(0, -1, 0)); //cube
-	//uboVS.view_matrix = glm::lookAt(glm::vec3(-90, 50, 0), glm::vec3(0, 0, 0), glm::vec3(0, -1, 0)); //couch
+	uboVS.camera_pos = glm::vec3(0, 100, 250); //sackboy
+	uboVS.camera_pos = glm::vec3(0, 0, 2);     //cube
+	uboVS.camera_pos = glm::vec3(-90, 50, 0);  //couch
+	uboVS.projection_matrix = glm::perspective(glm::radians(60.0f), (float)WIDTH / (float)HEIGHT, 1.0f, 512.0f); // general
+	//uboVS.projection_matrix = glm::infinitePerspective(glm::radians(60.0f), (float)WIDTH / (float)HEIGHT, 1.0f); // lod testing
+	uboVS.view_matrix = glm::lookAt(uboVS.camera_pos, glm::vec3(0, 0, 0), glm::vec3(0, -1, 0));
 	uboVS.model_matrix = glm::mat4();
 
 	// Textures
 	std::vector<std::string> texture_paths;
-	texture_paths.push_back("../meshes/cube/checker.jpg");
+	//texture_paths.push_back("../meshes/cube/checker.jpg");
 	//texture_paths.push_back("../meshes/cube/default.png");
 	//texture_paths.push_back("../meshes/cube/tounge.png");
-	//texture_paths.push_back("../meshes/couch/T_Couch_Mask.TGA");
-	//texture_paths.push_back("../meshes/couch/T_Leather_N.TGA");
-	//texture_paths.push_back("../meshes/couch/T_Couch_N.TGA");
-	//texture_paths.push_back("../meshes/couch/T_Couch_AO.TGA");
-	//texture_paths.push_back("../meshes/couch/T_Leather_S.TGA");
-	//texture_paths.push_back("../meshes/couch/T_Leather_D.TGA");
+	texture_paths.push_back("../meshes/couch/T_Couch_Mask.TGA");
+	texture_paths.push_back("../meshes/couch/T_Leather_N.TGA");
+	texture_paths.push_back("../meshes/couch/T_Couch_N.TGA");
+	texture_paths.push_back("../meshes/couch/T_Couch_AO.TGA");
+	texture_paths.push_back("../meshes/couch/T_Leather_S.TGA");
+	texture_paths.push_back("../meshes/couch/T_Leather_D.TGA");
 
 	// Shaders
-	std::string vertShaderText = simpleVertShaderText;
+	//std::string vertShaderText = simpleVertShaderText;
 	//std::string fragShaderText = simpleFragShaderText;
-	std::string fragShaderText = lodFragShaderText;
-	//std::string vertShaderText = couchVertShaderText;
-	//std::string fragShaderText = couchFragShaderText;
+	//std::string fragShaderText = lodFragShaderText;
+	std::string vertShaderText = couchVertShaderText;
+	std::string fragShaderText = couchFragShaderText;
 
 	// Initialize GLFW
 	GLFWwindow* window = init_glfw();
@@ -3577,9 +3620,9 @@ int main() {
 	std::vector<vk::DescriptorImageInfo> texture_descriptors(num_textures);
 
 	//create_samplers_no_mipmaps(physical_device, device, texture_paths, texture_images, texture_image_memorys, texture_image_views, texture_samplers, texture_descriptors);
-	//create_samplers_cpu_mipmaps(physical_device, device, texture_paths, texture_images, texture_image_memorys, texture_image_views, texture_samplers, texture_descriptors);
+	create_samplers_cpu_mipmaps(physical_device, device, texture_paths, texture_images, texture_image_memorys, texture_image_views, texture_samplers, texture_descriptors);
 	//create_samplers_blit_mipmaps(physical_device, device, texture_paths, texture_images, texture_image_memorys, texture_image_views, texture_samplers, texture_descriptors);
-	create_samplers_debug_mipmaps(physical_device, device, texture_paths, texture_images, texture_image_memorys, texture_image_views, texture_samplers, texture_descriptors);
+	//create_samplers_debug_mipmaps(physical_device, device, texture_paths, texture_images, texture_image_memorys, texture_image_views, texture_samplers, texture_descriptors);
 
 	// Create descriptor set
 	vk::DescriptorSetAllocateInfo descriptor_set_allocate_info(
@@ -3919,11 +3962,11 @@ int main() {
 	// Render Loop
 	quit = false;
 	do {
-		glm::vec3 camera_pos = glm::vec3(-90, 50, 0);
+		glm::vec3 camera_pos = uboVS.camera_pos;
 		glm::vec3 camera_target = glm::vec3(0.0f, 0.0f, 0.0f);
 		glm::vec3 camera_direction = glm::normalize(camera_pos - camera_target);
-		glm::vec3 camera_right = glm::normalize(glm::cross(glm::vec3(0.0f, 1.0f, 0.0f), camera_direction));
-		glm::vec3 camera_up = glm::cross(camera_direction, camera_right);
+		glm::vec3 camera_up = glm::vec3(0, -1, 0); 
+		glm::vec3 camera_right = glm::normalize(glm::cross(camera_direction, camera_up));
 
 		// GLFW Input Handling
 		glfwPollEvents();
@@ -3934,11 +3977,11 @@ int main() {
 			quit = true;
 		}
 		if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS) {
-			uboVS.model_matrix = glm::rotate(0.0004f, glm::vec3(0.0f, 1.0f, 0.0f)) * uboVS.model_matrix;
+			uboVS.model_matrix = glm::rotate(-0.0004f, camera_up) * uboVS.model_matrix;
 			update_memory(device, uniform_buffer_device_memory, &uboVS, sizeof(uboVS));
 		}
 		else if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS) {
-			uboVS.model_matrix = glm::rotate(-0.0004f, glm::vec3(0.0f, 1.0f, 0.0f)) * uboVS.model_matrix;
+			uboVS.model_matrix = glm::rotate(0.0004f, camera_up) * uboVS.model_matrix;
 			update_memory(device, uniform_buffer_device_memory, &uboVS, sizeof(uboVS));
 		}
 		if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS) {
@@ -3950,19 +3993,27 @@ int main() {
 			update_memory(device, uniform_buffer_device_memory, &uboVS, sizeof(uboVS));
 		}
 		if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
-			uboVS.view_matrix = glm::translate(uboVS.view_matrix, (glm::vec3(-90, 50, 0) - glm::vec3(0, 0, 0)) * 0.0004f);
+			uboVS.view_matrix = glm::translate(uboVS.view_matrix, camera_direction * 0.04f);
 			update_memory(device, uniform_buffer_device_memory, &uboVS, sizeof(uboVS));
 		}
 		else if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
-			uboVS.view_matrix = glm::translate(uboVS.view_matrix, (glm::vec3(-90, 50, 0) - glm::vec3(0, 0, 0)) * -0.0004f);
+			uboVS.view_matrix = glm::translate(uboVS.view_matrix, camera_direction * -0.04f);
 			update_memory(device, uniform_buffer_device_memory, &uboVS, sizeof(uboVS));
 		}
 		if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
-			uboVS.view_matrix = glm::translate(uboVS.view_matrix, cross((glm::vec3(-90, 50, 0) - glm::vec3(0, 0, 0)), camera_up) * -0.0004f);
+			uboVS.view_matrix = glm::translate(uboVS.view_matrix, camera_right * 0.04f);
 			update_memory(device, uniform_buffer_device_memory, &uboVS, sizeof(uboVS));
 		}
 		else if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) {
-			uboVS.view_matrix = glm::translate(uboVS.view_matrix, cross((glm::vec3(-90, 50, 0) - glm::vec3(0, 0, 0)), camera_up)  * 0.0004f);
+			uboVS.view_matrix = glm::translate(uboVS.view_matrix, camera_right * -0.04f);
+			update_memory(device, uniform_buffer_device_memory, &uboVS, sizeof(uboVS));
+		}
+		if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS) {
+			uboVS.view_matrix = glm::translate(uboVS.view_matrix, camera_up * -0.04f);
+			update_memory(device, uniform_buffer_device_memory, &uboVS, sizeof(uboVS));
+		}
+		else if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS) {
+			uboVS.view_matrix = glm::translate(uboVS.view_matrix, camera_up * 0.04f);
 			update_memory(device, uniform_buffer_device_memory, &uboVS, sizeof(uboVS));
 		}
 
