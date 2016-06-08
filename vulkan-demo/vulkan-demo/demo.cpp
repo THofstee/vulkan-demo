@@ -852,7 +852,7 @@ void print_surface_capabilities(const vk::PhysicalDevice& physical_device, const
 /*****************************************************************************
 * TEXTURE FUNCTIONS
 ******************************************************************************/
-std::vector<std::vector<unsigned char>> generate_mipmaps(unsigned char* texture, int texture_width, int texture_height) {
+std::vector<std::vector<unsigned char>> generate_mipmaps(unsigned char* texture, int texture_width, int texture_height, std::string texname="mipmap") {
 	int maxlevel = (int)std::floor(std::log2(std::max(texture_width, texture_height)))+1;
 	std::vector<std::vector<unsigned char>> mipmaps(maxlevel);
 	printf("maxlevel: %d\n", maxlevel-1);
@@ -917,7 +917,7 @@ std::vector<std::vector<unsigned char>> generate_mipmaps(unsigned char* texture,
 		}
 
 		// Write out mipmap layers for debugging
-		D_(stbi_write_png(("../mipmaps/mipmap-" + std::to_string(l) + ".png").c_str(), texture_width, texture_height, 4, mipmaps.at(l).data(), 4 * texture_width));
+		D_(stbi_write_png(("../mipmaps/" + texname + "-" + std::to_string(l) + ".png").c_str(), texture_width, texture_height, 4, mipmaps.at(l).data(), 4 * texture_width));
 	}
 
 	return mipmaps;
@@ -1155,7 +1155,7 @@ void create_samplers_cpu_mipmaps(
 	for (int k = 0; k < num_textures; k++) {
 		int texture_width, texture_height, texture_comp;
 		unsigned char* texture = stbi_load(texture_paths.at(k).c_str(), &texture_width, &texture_height, &texture_comp, 4);
-		std::vector<std::vector<unsigned char>> mipmaps = generate_mipmaps(texture, texture_width, texture_height);
+		std::vector<std::vector<unsigned char>> mipmaps = generate_mipmaps(texture, texture_width, texture_height, texture_paths.at(k));
 
 		// Create a staging image and copy the texture to it
 		vk::BufferCreateInfo staging_buffer_create_info(
