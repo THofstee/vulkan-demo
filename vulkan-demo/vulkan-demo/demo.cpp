@@ -186,7 +186,8 @@ void main() {
 	Norm = (ubo.model * vec4(norm, 0.0)).xyz;
 	Tex = tex;
 
-	gl_Position = ubo.proj * ubo.view * ubo.model * vec4(pos, 1.0);
+	vec3 pos2 = pos + gl_InstanceIndex * vec3(0.0, 0.0, 100.0) - vec3(0.0, 0.0, 50.0);
+	gl_Position = ubo.proj * ubo.view * ubo.model * vec4(pos2, 1.0);
 }
 )vertexShader";
 
@@ -4027,7 +4028,7 @@ int main() {
 			command_buffers.at(k).bindPipeline(vk::PipelineBindPoint::eGraphics, graphics_pipelines[0]);
 			command_buffers.at(k).bindVertexBuffers(0, vertex_buffer, vk::DeviceSize());
 
-			command_buffers.at(k).draw((uint32_t)vertices.size(), 1, 0, 0);
+			command_buffers.at(k).draw((uint32_t)vertices.size(), 2, 0, 0);
 
 			command_buffers.at(k).endRenderPass();
 
