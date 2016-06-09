@@ -30,8 +30,8 @@
 #define DEBUG _DEBUG
 #define DEBUG_CLEANUP true
 
-#define WIDTH  640
-#define HEIGHT 480
+#define WIDTH  1920
+#define HEIGHT 1080
 #define VSYNC false
 
 // I don't want windows.h
@@ -1841,7 +1841,7 @@ void create_samplers_blit_mipmaps(
 				texture_images.at(k),
 				vk::ImageLayout::eGeneral,
 				staging_blit_regions,
-				vk::Filter::eLinear // change to cubic?
+				vk::Filter::eNearest
 			);
 
 			// Blit Image
@@ -1851,7 +1851,7 @@ void create_samplers_blit_mipmaps(
 				texture_images.at(k),
 				vk::ImageLayout::eGeneral,
 				blit_regions,
-				vk::Filter::eLinear // change to cubic?
+				vk::Filter::eLinear
 			);
 
 			// Convert texture_image layout to shader optimal
@@ -4010,6 +4010,7 @@ int main() {
 
 	// Render Loop
 	quit = false;
+	double prev_render_time = 1.0;
 	do {
 		std::chrono::high_resolution_clock::time_point render_start = std::chrono::high_resolution_clock::now();
 
@@ -4018,6 +4019,9 @@ int main() {
 		glm::vec3 camera_direction = glm::normalize(camera_pos - camera_target);
 		glm::vec3 camera_up = glm::vec3(0, -1, 0); 
 		glm::vec3 camera_right = glm::normalize(glm::cross(camera_direction, camera_up));
+
+		float translate_speed = 0.04 * prev_render_time;
+		float rotate_speed = 0.0008 * prev_render_time;
 
 		// GLFW Input Handling
 		glfwPollEvents();
@@ -4028,43 +4032,43 @@ int main() {
 			quit = true;
 		}
 		if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS) {
-			uboVS.model_matrix = glm::rotate(-0.0004f, camera_up) * uboVS.model_matrix;
+			uboVS.model_matrix = glm::rotate(-rotate_speed, camera_up) * uboVS.model_matrix;
 			update_memory(device, uniform_buffer_device_memory, &uboVS, sizeof(uboVS));
 		}
 		else if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS) {
-			uboVS.model_matrix = glm::rotate(0.0004f, camera_up) * uboVS.model_matrix;
+			uboVS.model_matrix = glm::rotate(rotate_speed, camera_up) * uboVS.model_matrix;
 			update_memory(device, uniform_buffer_device_memory, &uboVS, sizeof(uboVS));
 		}
 		if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS) {
-			uboVS.model_matrix = glm::rotate(0.0004f, camera_right) * uboVS.model_matrix;
+			uboVS.model_matrix = glm::rotate(rotate_speed, camera_right) * uboVS.model_matrix;
 			update_memory(device, uniform_buffer_device_memory, &uboVS, sizeof(uboVS));
 		}
 		else if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS) {
-			uboVS.model_matrix = glm::rotate(-0.0004f, camera_right) * uboVS.model_matrix;
+			uboVS.model_matrix = glm::rotate(-rotate_speed, camera_right) * uboVS.model_matrix;
 			update_memory(device, uniform_buffer_device_memory, &uboVS, sizeof(uboVS));
 		}
 		if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
-			uboVS.view_matrix = glm::translate(uboVS.view_matrix, camera_direction * 0.04f);
+			uboVS.view_matrix = glm::translate(uboVS.view_matrix, camera_direction * translate_speed);
 			update_memory(device, uniform_buffer_device_memory, &uboVS, sizeof(uboVS));
 		}
 		else if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
-			uboVS.view_matrix = glm::translate(uboVS.view_matrix, camera_direction * -0.04f);
+			uboVS.view_matrix = glm::translate(uboVS.view_matrix, camera_direction * -translate_speed);
 			update_memory(device, uniform_buffer_device_memory, &uboVS, sizeof(uboVS));
 		}
 		if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
-			uboVS.view_matrix = glm::translate(uboVS.view_matrix, camera_right * 0.04f);
+			uboVS.view_matrix = glm::translate(uboVS.view_matrix, camera_right * translate_speed);
 			update_memory(device, uniform_buffer_device_memory, &uboVS, sizeof(uboVS));
 		}
 		else if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) {
-			uboVS.view_matrix = glm::translate(uboVS.view_matrix, camera_right * -0.04f);
+			uboVS.view_matrix = glm::translate(uboVS.view_matrix, camera_right * -translate_speed);
 			update_memory(device, uniform_buffer_device_memory, &uboVS, sizeof(uboVS));
 		}
 		if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS) {
-			uboVS.view_matrix = glm::translate(uboVS.view_matrix, camera_up * -0.04f);
+			uboVS.view_matrix = glm::translate(uboVS.view_matrix, camera_up * -translate_speed);
 			update_memory(device, uniform_buffer_device_memory, &uboVS, sizeof(uboVS));
 		}
 		else if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS) {
-			uboVS.view_matrix = glm::translate(uboVS.view_matrix, camera_up * 0.04f);
+			uboVS.view_matrix = glm::translate(uboVS.view_matrix, camera_up * translate_speed);
 			update_memory(device, uniform_buffer_device_memory, &uboVS, sizeof(uboVS));
 		}
 
@@ -4124,6 +4128,7 @@ int main() {
 
 		std::chrono::high_resolution_clock::time_point  render_finish = std::chrono::high_resolution_clock::now();
 		std::chrono::duration<double, std::milli> render_time = render_finish - render_start;
+		prev_render_time = render_time.count();
 		printf("Render time: %.2fms (%u FPS)\r", render_time.count(), (unsigned int)(1000.0f/render_time.count()));
 	} while (!quit);
 	printf("\n");
