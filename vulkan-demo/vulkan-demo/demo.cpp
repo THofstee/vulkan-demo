@@ -40,9 +40,7 @@ typedef unsigned long DWORD;
 #endif
 
 // Use the NVIDIA GPU if the system has Optimus
-extern "C" {
-	_declspec(dllexport) DWORD NvOptimusEnablement = 0x00000001;
-}
+extern "C" _declspec(dllexport) DWORD NvOptimusEnablement = 0x00000001;
 
 bool quit;
 
@@ -211,6 +209,7 @@ layout(binding = 6) uniform sampler2D leatherMap;
 layout(std430, push_constant) uniform PushConstants
 {
 	vec3 lightColor;
+	vec3 cameraPos;
 } constants;
 
 float ComputeLuminance(vec3 color)
@@ -269,9 +268,9 @@ float LightingFuncGGX_D(float dotNH, float roughness)
 
 vec3 Lighting(vec3 normal, vec3 albedo, vec3 lightParam) {
 	vec3 pos = gl_FragCoord.xyz;
-	vec3 lightDir = vec3(-10.0, 10.0, 0.0);
+	vec3 lightDir = vec3(-10.0, 10.0, 1.0);
 	vec3 lightColor = constants.lightColor;
-	vec3 cameraPos = vec3(-90, 50, 0);
+	vec3 cameraPos = constants.cameraPos;
 
 	float brightness = clamp(dot(lightDir, normal), 0.0, 1.0);
 	vec3 view = normalize(cameraPos - pos);
@@ -1678,7 +1677,7 @@ void create_samplers_blit_mipmaps(
 			1,
 			vk::SampleCountFlagBits::e1,
 			vk::ImageTiling::eOptimal,
-			vk::ImageUsageFlags(vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled),
+			vk::ImageUsageFlags(vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled),
 			vk::SharingMode::eExclusive,
 			0,
 			nullptr,
@@ -3497,6 +3496,14 @@ int main() {
 			)
 		);
 		offset += sizeof(glm::vec3);
+		push_constant_ranges.push_back(
+			vk::PushConstantRange(
+				vk::ShaderStageFlags(vk::ShaderStageFlagBits::eFragment),
+				offset,
+				sizeof(glm::vec3)
+			)
+		);
+		offset += sizeof(glm::vec3);
 	}
 	catch (const std::system_error& e) {
 		fprintf(stderr, "Vulkan failure: %s\n", e.what());
@@ -4017,6 +4024,7 @@ int main() {
 
 			std::vector<glm::vec3> push_consts;
 			push_consts.push_back(glm::vec3(0.7, 0.7, 0.6));
+			push_consts.push_back(uboVS.camera_pos);
 			command_buffers.at(k).pushConstants<glm::vec3>(
 				pipeline_layout,
 				vk::ShaderStageFlags(vk::ShaderStageFlagBits::eFragment), 
@@ -4063,6 +4071,7 @@ int main() {
 		glm::vec3 camera_up = glm::vec3(0, -1, 0); 
 		glm::vec3 camera_right = glm::normalize(glm::cross(camera_direction, camera_up));
 
+		//float dist = (camera_pos - camera_target).length;
 		float translate_speed = 0.04f * (float)prev_render_time;
 		float rotate_speed = 0.0008f * (float)prev_render_time;
 
@@ -4075,19 +4084,23 @@ int main() {
 			quit = true;
 		}
 		if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS) {
-			uboVS.model_matrix = glm::rotate(-rotate_speed, camera_up) * uboVS.model_matrix;
+			//uboVS.model_matrix = glm::rotate(-rotate_speed, camera_up) * uboVS.model_matrix;
+			uboVS.view_matrix = glm::rotate(uboVS.view_matrix, -rotate_speed, camera_up);
 			update_memory(device, uniform_buffer_device_memory, &uboVS, sizeof(uboVS));
 		}
 		else if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS) {
-			uboVS.model_matrix = glm::rotate(rotate_speed, camera_up) * uboVS.model_matrix;
+			//uboVS.model_matrix = glm::rotate(rotate_speed, camera_up) * uboVS.model_matrix;
+			uboVS.view_matrix = glm::rotate(uboVS.view_matrix, rotate_speed, camera_up);
 			update_memory(device, uniform_buffer_device_memory, &uboVS, sizeof(uboVS));
 		}
 		if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS) {
-			uboVS.model_matrix = glm::rotate(rotate_speed, camera_right) * uboVS.model_matrix;
+			//uboVS.model_matrix = glm::rotate(rotate_speed, camera_right) * uboVS.model_matrix;
+			uboVS.view_matrix = glm::rotate(uboVS.view_matrix, rotate_speed, camera_right);
 			update_memory(device, uniform_buffer_device_memory, &uboVS, sizeof(uboVS));
 		}
 		else if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS) {
-			uboVS.model_matrix = glm::rotate(-rotate_speed, camera_right) * uboVS.model_matrix;
+			//uboVS.model_matrix = glm::rotate(-rotate_speed, camera_right) * uboVS.model_matrix;
+			uboVS.view_matrix = glm::rotate(uboVS.view_matrix, -rotate_speed, camera_right);
 			update_memory(device, uniform_buffer_device_memory, &uboVS, sizeof(uboVS));
 		}
 		if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
