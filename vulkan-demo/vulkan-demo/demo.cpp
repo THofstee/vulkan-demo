@@ -27,11 +27,11 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
 
-#define DEBUG true
+#define DEBUG _DEBUG
 #define DEBUG_CLEANUP true
 
-#define WIDTH  1920
-#define HEIGHT 1080
+#define WIDTH  640
+#define HEIGHT 480
 #define VSYNC false
 
 // I don't want windows.h
@@ -1206,7 +1206,7 @@ void create_samplers_cpu_mipmaps(
 			std::min(texture_width, texture_height)*1.5f * std::max(texture_width, texture_height) * 4, // check for errors
 			vk::BufferUsageFlags(vk::BufferUsageFlagBits::eTransferSrc),
 			vk::SharingMode::eExclusive,
-			-1,
+			0,
 			nullptr
 		);
 
@@ -1990,7 +1990,7 @@ void create_samplers_debug_mipmaps(
 			std::min(texture_width, texture_height)*1.5f * std::max(texture_width, texture_height) * 4, // check for errors
 			vk::BufferUsageFlags(vk::BufferUsageFlagBits::eTransferSrc),
 			vk::SharingMode::eExclusive,
-			-1,
+			0,
 			nullptr
 		);
 
@@ -3512,25 +3512,6 @@ int main() {
 		exit(-1);
 	}
 
-	// Setup command buffer allocation info
-	vk::CommandBufferAllocateInfo setup_cmd_buffer_allocate_info(
-		command_pool,
-		vk::CommandBufferLevel::ePrimary,
-		(uint32_t)1
-	);
-
-	// Create setup command buffers
-	std::vector<vk::CommandBuffer> setup_command_buffers;
-	try {
-		setup_command_buffers = device.allocateCommandBuffers(setup_cmd_buffer_allocate_info);
-	}
-	catch (const std::system_error& e) {
-		fprintf(stderr, "Vulkan failure: %s\n", e.what());
-		system("pause");
-		exit(-1);
-	}
-	vk::CommandBuffer setup_command_buffer = setup_command_buffers.at(0);
-
 	// Swapchain command buffers allocation info
 	vk::CommandBufferAllocateInfo cmd_buffer_allocate_info(
 		command_pool,
@@ -3661,13 +3642,27 @@ int main() {
 			descriptor_sets.at(0),
 			1,
 			0,
-			(uint32_t)texture_descriptors.size(),
+			texture_descriptors.size(),
 			vk::DescriptorType::eCombinedImageSampler,
 			texture_descriptors.data(),
 			nullptr,
 			nullptr
 		)
 	);
+	//for (int k = 0; k < texture_descriptors.size(); k++) {
+	//	write_descriptor_sets.push_back( // Fragment Shader Texture Samplers
+	//		vk::WriteDescriptorSet(
+	//			descriptor_sets.at(0),
+	//			1+k,
+	//			0,
+	//			1,
+	//			vk::DescriptorType::eCombinedImageSampler,
+	//			&texture_descriptors.at(k),
+	//			nullptr,
+	//			nullptr
+	//		)
+	//	);
+	//}
 
 	try {
 		device.updateDescriptorSets(write_descriptor_sets, nullptr);
@@ -3761,6 +3756,25 @@ int main() {
 
 	// Get present queue
 	vk::Queue present_queue = device.getQueue(0, 0);
+
+	// Setup command buffer allocation info
+	vk::CommandBufferAllocateInfo setup_cmd_buffer_allocate_info(
+		command_pool,
+		vk::CommandBufferLevel::ePrimary,
+		(uint32_t)1
+	);
+
+	// Create setup command buffers
+	std::vector<vk::CommandBuffer> setup_command_buffers;
+	try {
+		setup_command_buffers = device.allocateCommandBuffers(setup_cmd_buffer_allocate_info);
+	}
+	catch (const std::system_error& e) {
+		fprintf(stderr, "Vulkan failure: %s\n", e.what());
+		system("pause");
+		exit(-1);
+	}
+	vk::CommandBuffer setup_command_buffer = setup_command_buffers.at(0);
 
 	// Command Buffer Begin Info
 	vk::CommandBufferBeginInfo setup_cmd_buffer_begin_info(
