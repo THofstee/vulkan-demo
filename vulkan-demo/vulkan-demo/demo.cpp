@@ -4174,7 +4174,7 @@ int main() {
 		}
 
 		try {
-			device.waitIdle();
+			present_queue.waitIdle();
 		}
 		catch (const std::system_error& e) {
 			fprintf(stderr, "Vulkan failure: %s\n", e.what());
@@ -4185,7 +4185,7 @@ int main() {
 		std::chrono::high_resolution_clock::time_point  render_finish = std::chrono::high_resolution_clock::now();
 		std::chrono::duration<double, std::milli> render_time = render_finish - render_start;
 		prev_render_time = render_time.count();
-		printf("Render time: %.2fms (%u FPS)\r", render_time.count(), (unsigned int)(1000.0f/render_time.count()));
+		printf("Render time: %.2fms (%u FPS)          \r", render_time.count(), (unsigned int)(1000.0f/render_time.count()));
 	} while (!quit);
 	printf("\n");
 
