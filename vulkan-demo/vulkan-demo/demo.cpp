@@ -1720,18 +1720,41 @@ void create_samplers_blit_mipmaps(
 		}
 
 		// Blit image to create mipmaps
-		std::vector<vk::ImageBlit> blit_regions(maxlevel);
-		for (int l = 0; l < maxlevel; l++) {
-			blit_regions.at(l) = vk::ImageBlit(
+		std::vector<vk::ImageBlit> staging_blit_regions(1);
+		std::vector<vk::ImageBlit> blit_regions(maxlevel-1);
+		staging_blit_regions.at(0) = vk::ImageBlit(
+			vk::ImageSubresourceLayers(
+				vk::ImageAspectFlags(vk::ImageAspectFlagBits::eColor),
+				0,
+				0,
+				1
+			),
+			std::array<vk::Offset3D, 2> {
+				vk::Offset3D(0, 0, 0),
+					vk::Offset3D(texture_width, texture_height, 1)
+			},
+			vk::ImageSubresourceLayers(
+				vk::ImageAspectFlags(vk::ImageAspectFlagBits::eColor),
+				0,
+				0,
+				1
+			),
+			std::array<vk::Offset3D, 2> {
+				vk::Offset3D(0, 0, 0),
+				vk::Offset3D(texture_width, texture_height, 1)
+			}
+		);
+		for (int l = 1; l < maxlevel; l++) {
+			blit_regions.at(l-1) = vk::ImageBlit(
 				vk::ImageSubresourceLayers(
 					vk::ImageAspectFlags(vk::ImageAspectFlagBits::eColor),
-					0,
+					l-1,
 					0,
 					1
 				),
 				std::array<vk::Offset3D, 2> {
 					vk::Offset3D(0, 0, 0),
-					vk::Offset3D(texture_width, texture_height, 1)
+					vk::Offset3D(std::max(1, texture_width >> (l - 1)), std::max(1, texture_height >> (l - 1)), 1)
 				},
 				vk::ImageSubresourceLayers(
 					vk::ImageAspectFlags(vk::ImageAspectFlagBits::eColor),
@@ -1814,6 +1837,16 @@ void create_samplers_blit_mipmaps(
 			// Blit Image
 			mipmap_command_buffer.blitImage(
 				staging_image,
+				vk::ImageLayout::eGeneral,
+				texture_images.at(k),
+				vk::ImageLayout::eGeneral,
+				staging_blit_regions,
+				vk::Filter::eLinear // change to cubic?
+			);
+
+			// Blit Image
+			mipmap_command_buffer.blitImage(
+				texture_images.at(k),
 				vk::ImageLayout::eGeneral,
 				texture_images.at(k),
 				vk::ImageLayout::eGeneral,
@@ -3603,8 +3636,8 @@ int main() {
 	std::vector<vk::DescriptorImageInfo> texture_descriptors(num_textures);
 
 	//create_samplers_no_mipmaps(physical_device, device, texture_paths, texture_images, texture_image_memorys, texture_image_views, texture_samplers, texture_descriptors);
-	create_samplers_cpu_mipmaps(physical_device, device, texture_paths, texture_images, texture_image_memorys, texture_image_views, texture_samplers, texture_descriptors);
-	//create_samplers_blit_mipmaps(physical_device, device, texture_paths, texture_images, texture_image_memorys, texture_image_views, texture_samplers, texture_descriptors);
+	//create_samplers_cpu_mipmaps(physical_device, device, texture_paths, texture_images, texture_image_memorys, texture_image_views, texture_samplers, texture_descriptors);
+	create_samplers_blit_mipmaps(physical_device, device, texture_paths, texture_images, texture_image_memorys, texture_image_views, texture_samplers, texture_descriptors);
 	//create_samplers_debug_mipmaps(physical_device, device, texture_paths, texture_images, texture_image_memorys, texture_image_views, texture_samplers, texture_descriptors);
 
 	// Create descriptor set
