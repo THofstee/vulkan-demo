@@ -950,10 +950,10 @@ std::vector<std::vector<unsigned char>> generate_mipmaps(unsigned char* texture,
 					int x1 = std::min(last_width, 2 * x + 1);
 					int y0 = 2 * y;
 					int y1 = std::min(last_height, 2 * y + 1);
-					mipmaps.at(l).at(idx + c) = 0.25*(mipmaps.at(l - 1).at((y0 * last_width + x0) * 4 + c) +
-													  mipmaps.at(l - 1).at((y1 * last_width + x0) * 4 + c) +
-													  mipmaps.at(l - 1).at((y0 * last_width + x1) * 4 + c) +
-													  mipmaps.at(l - 1).at((y1 * last_width + x1) * 4 + c));
+					mipmaps.at(l).at(idx + c) = (unsigned char)(0.25*(mipmaps.at(l - 1).at((y0 * last_width + x0) * 4 + c) +
+																	  mipmaps.at(l - 1).at((y1 * last_width + x0) * 4 + c) +
+																	  mipmaps.at(l - 1).at((y0 * last_width + x1) * 4 + c) +
+																	  mipmaps.at(l - 1).at((y1 * last_width + x1) * 4 + c)));
 				}
 			}
 		}
@@ -976,7 +976,7 @@ void create_samplers_no_mipmaps(
 	std::vector<vk::ImageView>& texture_image_views, 
 	std::vector<vk::Sampler>& texture_samplers, 
 	std::vector<vk::DescriptorImageInfo>& texture_descriptors) {
-	int num_textures = texture_paths.size();
+	size_t num_textures = texture_paths.size();
 
 	for (int k = 0; k < num_textures; k++) {
 		int texture_width, texture_height, texture_comp;
@@ -1157,7 +1157,7 @@ void create_samplers_cpu_mipmaps(
 	std::vector<vk::ImageView>& texture_image_views,
 	std::vector<vk::Sampler>& texture_samplers,
 	std::vector<vk::DescriptorImageInfo>& texture_descriptors) {
-	int num_textures = texture_paths.size();
+	size_t num_textures = texture_paths.size();
 
 	// Create command buffer memory pool
 	vk::CommandPoolCreateInfo mipmap_cmd_pool_create_info(
@@ -1203,7 +1203,7 @@ void create_samplers_cpu_mipmaps(
 		// Create a staging image and copy the texture to it
 		vk::BufferCreateInfo staging_buffer_create_info(
 			vk::BufferCreateFlags(),
-			std::min(texture_width, texture_height)*1.5f * std::max(texture_width, texture_height) * 4, // check for errors
+			vk::DeviceSize(std::min(texture_width, texture_height)*1.5f * std::max(texture_width, texture_height) * 4), // check for errors
 			vk::BufferUsageFlags(vk::BufferUsageFlagBits::eTransferSrc),
 			vk::SharingMode::eExclusive,
 			0,
@@ -1257,7 +1257,7 @@ void create_samplers_cpu_mipmaps(
 		}
 
 		// copy texture to staging buffer and create buffer copy regions
-		int offset = 0;
+		size_t offset = 0;
 		std::vector<vk::BufferImageCopy> buffer_copy_regions;
 		for (int l = 0; l < mipmaps.size(); l++) {
 			update_memory_offset(device, staging_memory, offset, mipmaps.at(l).data(), mipmaps.at(l).size()); // this maps and unmaps several times, optimize?
@@ -1291,7 +1291,7 @@ void create_samplers_cpu_mipmaps(
 			vk::ImageType::e2D,
 			vk::Format::eB8G8R8A8Unorm,
 			vk::Extent3D(texture_width, texture_height, 1),
-			mipmaps.size(),
+			(uint32_t)mipmaps.size(),
 			1,
 			vk::SampleCountFlagBits::e1,
 			vk::ImageTiling::eOptimal,
@@ -1357,7 +1357,7 @@ void create_samplers_cpu_mipmaps(
 			vk::ImageSubresourceRange texture_image_subresource_range(
 				vk::ImageAspectFlags(vk::ImageAspectFlagBits::eColor),
 				0,
-				mipmaps.size(),
+				(uint32_t)mipmaps.size(),
 				0,
 				1
 			);
@@ -1445,7 +1445,7 @@ void create_samplers_cpu_mipmaps(
 			vk::ImageSubresourceRange(
 				vk::ImageAspectFlags(vk::ImageAspectFlagBits::eColor),
 				0,
-				mipmaps.size(),
+				(uint32_t)mipmaps.size(),
 				0,
 				1
 			)
@@ -1510,7 +1510,7 @@ void create_samplers_blit_mipmaps(
 	std::vector<vk::ImageView>& texture_image_views,
 	std::vector<vk::Sampler>& texture_samplers,
 	std::vector<vk::DescriptorImageInfo>& texture_descriptors) {
-	int num_textures = texture_paths.size();
+	size_t num_textures = texture_paths.size();
 
 	// Create command buffer memory pool
 	vk::CommandPoolCreateInfo mipmap_cmd_pool_create_info(
@@ -1941,7 +1941,7 @@ void create_samplers_debug_mipmaps(
 	std::vector<vk::ImageView>& texture_image_views,
 	std::vector<vk::Sampler>& texture_samplers,
 	std::vector<vk::DescriptorImageInfo>& texture_descriptors) {
-	int num_textures = texture_paths.size();
+	size_t num_textures = texture_paths.size();
 
 	// Create command buffer memory pool
 	vk::CommandPoolCreateInfo mipmap_cmd_pool_create_info(
@@ -1987,7 +1987,7 @@ void create_samplers_debug_mipmaps(
 		// Create a staging image and copy the texture to it
 		vk::BufferCreateInfo staging_buffer_create_info(
 			vk::BufferCreateFlags(),
-			std::min(texture_width, texture_height)*1.5f * std::max(texture_width, texture_height) * 4, // check for errors
+			vk::DeviceSize(std::min(texture_width, texture_height)*1.5f * std::max(texture_width, texture_height) * 4), // check for errors
 			vk::BufferUsageFlags(vk::BufferUsageFlagBits::eTransferSrc),
 			vk::SharingMode::eExclusive,
 			0,
@@ -3642,7 +3642,7 @@ int main() {
 			descriptor_sets.at(0),
 			1,
 			0,
-			texture_descriptors.size(),
+			(uint32_t)texture_descriptors.size(),
 			vk::DescriptorType::eCombinedImageSampler,
 			texture_descriptors.data(),
 			nullptr,
@@ -4091,7 +4091,7 @@ int main() {
 
 		std::chrono::high_resolution_clock::time_point  render_finish = std::chrono::high_resolution_clock::now();
 		std::chrono::duration<double, std::milli> render_time = render_finish - render_start;
-		printf("Render time: %.2fms (%llu FPS)\r", render_time.count(), (int)(1000.0f/render_time.count()));
+		printf("Render time: %.2fms (%u FPS)\r", render_time.count(), (unsigned int)(1000.0f/render_time.count()));
 	} while (!quit);
 	printf("\n");
 
