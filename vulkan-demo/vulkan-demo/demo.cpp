@@ -207,6 +207,11 @@ layout(binding = 4) uniform sampler2D aoMap;
 layout(binding = 5) uniform sampler2D leatherSpecularMap;
 layout(binding = 6) uniform sampler2D leatherMap;
 
+layout(std430, push_constant) uniform PushConstants
+{
+	vec3 lightColor;
+} constants;
+
 float ComputeLuminance(vec3 color)
 {
     return color.x * 0.3 + color.y * 0.59 + color.z * 0.11;
@@ -264,7 +269,7 @@ float LightingFuncGGX_D(float dotNH, float roughness)
 vec3 Lighting(vec3 normal, vec3 albedo, vec3 lightParam) {
 	vec3 pos = gl_FragCoord.xyz;
 	vec3 lightDir = vec3(-10.0, 10.0, 0.0);
-	vec3 lightColor = vec3(0.7, 0.7, 0.6);
+	vec3 lightColor = constants.lightColor;
 	vec3 cameraPos = vec3(-90, 50, 0);
 
 	float brightness = clamp(dot(lightDir, normal), 0.0, 1.0);
@@ -840,6 +845,15 @@ void print_device_info(const std::vector<vk::PhysicalDevice>& physicalDevices) {
 
 		printf("\n");
 
+		// Print out device queue info
+		std::vector<vk::QueueFamilyProperties> familyProperties = physicalDevices.at(i).getQueueFamilyProperties();
+
+		for (int j = 0; j < familyProperties.size(); j++) {
+			printf("Count of Queues: %d\n", familyProperties[j].queueCount);
+			printf("Supported operations on this queue: %s\n", to_string(familyProperties[j].queueFlags).c_str());
+			printf("\n");
+		}
+		
 		// Print out device features
 		printf("Supported Features:\n");
 		vk::PhysicalDeviceFeatures deviceFeatures = physicalDevices.at(i).getFeatures();
@@ -848,15 +862,10 @@ void print_device_info(const std::vector<vk::PhysicalDevice>& physicalDevices) {
 
 		printf("\n");
 
-		// Print out device queue info
-		std::vector<vk::QueueFamilyProperties> familyProperties = physicalDevices.at(i).getQueueFamilyProperties();
-
-		for (int j = 0; j < familyProperties.size(); j++) {
-			printf("Count of Queues: %d\n", familyProperties[j].queueCount);
-			printf("Supported operations on this queue:\n");
-			printf("%s\n", to_string(familyProperties[j].queueFlags).c_str());
-			printf("\n");
-		}
+		// Print out device limits
+		printf("Device Limits:\n");
+		printf("Max Vertex Input Attributes: %d\n", deviceProperties.limits.maxVertexInputAttributes);
+		printf("Max Push Constants Size: %d\n", deviceProperties.limits.maxPushConstantsSize);
 
 		// Readability
 		printf("\n---\n\n");
@@ -3476,13 +3485,31 @@ int main() {
 		exit(-1);
 	}
 
+	std::vector<vk::PushConstantRange> push_constant_ranges;
+	try {
+		uint32_t offset = 0;
+		push_constant_ranges.push_back(
+			vk::PushConstantRange(
+				vk::ShaderStageFlags(vk::ShaderStageFlagBits::eFragment),
+				offset,
+				sizeof(glm::vec3)
+			)
+		);
+		offset += sizeof(glm::vec3);
+	}
+	catch (const std::system_error& e) {
+		fprintf(stderr, "Vulkan failure: %s\n", e.what());
+		system("pause");
+		exit(-1);
+	}
+
 	// Create Pipeline Layout
 	vk::PipelineLayoutCreateInfo layout_create_info(
 		vk::PipelineLayoutCreateFlags(),
 		(uint32_t)descriptor_set_layouts.size(),
 		descriptor_set_layouts.data(),
-		0,
-		nullptr
+		(uint32_t)push_constant_ranges.size(),
+		push_constant_ranges.data()
 	);
 
 	vk::PipelineLayout pipeline_layout;
@@ -3984,11 +4011,26 @@ int main() {
 			);
 
 			command_buffers.at(k).beginRenderPass(&render_pass_begin_info, vk::SubpassContents::eInline);
+			command_buffers.at(k).setViewport(0, viewports);
+			command_buffers.at(k).setScissor(0, scissors);
+
+			std::vector<glm::vec3> push_consts;
+			push_consts.push_back(glm::vec3(0.7, 0.7, 0.6));
+			command_buffers.at(k).pushConstants<glm::vec3>(
+				pipeline_layout,
+				vk::ShaderStageFlags(vk::ShaderStageFlagBits::eFragment), 
+				0, 
+				push_consts
+			);
+
 			command_buffers.at(k).bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipeline_layout, 0, descriptor_sets, nullptr);
 			command_buffers.at(k).bindPipeline(vk::PipelineBindPoint::eGraphics, graphics_pipelines[0]);
 			command_buffers.at(k).bindVertexBuffers(0, vertex_buffer, vk::DeviceSize());
+
 			command_buffers.at(k).draw((uint32_t)vertices.size(), 1, 0, 0);
+
 			command_buffers.at(k).endRenderPass();
+
 			command_buffers.at(k).pipelineBarrier(
 				vk::PipelineStageFlags(vk::PipelineStageFlagBits::eTransfer),
 				vk::PipelineStageFlags(vk::PipelineStageFlagBits::eBottomOfPipe),
@@ -4020,8 +4062,8 @@ int main() {
 		glm::vec3 camera_up = glm::vec3(0, -1, 0); 
 		glm::vec3 camera_right = glm::normalize(glm::cross(camera_direction, camera_up));
 
-		float translate_speed = 0.04 * prev_render_time;
-		float rotate_speed = 0.0008 * prev_render_time;
+		float translate_speed = 0.04f * (float)prev_render_time;
+		float rotate_speed = 0.0008f * (float)prev_render_time;
 
 		// GLFW Input Handling
 		glfwPollEvents();
