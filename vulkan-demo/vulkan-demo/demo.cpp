@@ -449,6 +449,8 @@ template <typename Allocator = std::allocator<unsigned int>>
 typename std::vector<unsigned int, Allocator> GLSLtoSPV(const vk::ShaderStageFlagBits shader_type, const std::string& pshader) {
 	std::vector<unsigned int> shaderSPV;
 
+	glslang::InitializeProcess();
+
 	EShLanguage stage = find_language(shader_type);
 	glslang::TShader  shader(stage);
 	glslang::TProgram program;
@@ -481,6 +483,8 @@ typename std::vector<unsigned int, Allocator> GLSLtoSPV(const vk::ShaderStageFla
 	}
 
 	glslang::GlslangToSpv(*program.getIntermediate(stage), shaderSPV);
+
+	glslang::FinalizeProcess();
 
 	return shaderSPV;
 }
@@ -522,14 +526,6 @@ GLFWwindow* init_glfw() {
 	}
 
 	return window;
-}
-
-void init_glslang() {
-	glslang::InitializeProcess();
-}
-
-void finalize_glslang() {
-	glslang::FinalizeProcess();
 }
 
 // Create callbacks for debugging
@@ -2829,9 +2825,6 @@ int main() {
 
 	// Initialize GLFW
 	GLFWwindow* window = init_glfw();
-
-	// Initialize glslang
-	init_glslang();
 
 	// Create Vulkan Instance
 	vk::Instance instance = create_instance();
