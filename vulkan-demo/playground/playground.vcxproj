@@ -19,9 +19,9 @@
     </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <ProjectGuid>{A47E0E62-D0B3-40FD-8770-CD3440143BDA}</ProjectGuid>
-    <RootNamespace>vulkandemo</RootNamespace>
-    <WindowsTargetPlatformVersion>10.0.10586.0</WindowsTargetPlatformVersion>
+    <ProjectGuid>{4366CF8C-040B-4469-A44D-0B646874981A}</ProjectGuid>
+    <RootNamespace>playground</RootNamespace>
+    <WindowsTargetPlatformVersion>8.1</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
@@ -71,27 +71,19 @@
   <PropertyGroup />
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
-      <WarningLevel>Level4</WarningLevel>
+      <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
       <SDLCheck>true</SDLCheck>
       <AdditionalIncludeDirectories>$(SolutionDir)\utils;$(VULKAN_SDK)\Include;$(VULKAN_SDK)\glslang;$(VULKAN_SDK)\spirv-tools\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
-    <Link>
-      <AdditionalDependencies>$(VULKAN_SDK)\glslang\build\glslang\Debug\glslang.lib;$(VULKAN_SDK)\glslang\build\OGLCompilersDLL\Debug\OGLCompiler.lib;$(VULKAN_SDK)\glslang\build\glslang\OSDependent\Windows\Debug\OSDependent.lib;$(VULKAN_SDK)\glslang\build\hlsl\Debug\HLSL.lib;$(VULKAN_SDK)\glslang\build\SPIRV\Debug\SPIRV.lib;$(SolutionDir)\lib\glfw3dll.lib</AdditionalDependencies>
-    </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
-      <WarningLevel>Level4</WarningLevel>
+      <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
       <SDLCheck>true</SDLCheck>
       <AdditionalIncludeDirectories>$(SolutionDir)\utils;$(VULKAN_SDK)\Include;$(VULKAN_SDK)\glslang;$(VULKAN_SDK)\spirv-tools\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
-    <Link>
-      <AdditionalDependencies>$(VULKAN_SDK)\glslang\build\glslang\Debug\glslang.lib;$(VULKAN_SDK)\glslang\build\OGLCompilersDLL\Debug\OGLCompiler.lib;$(VULKAN_SDK)\glslang\build\glslang\OSDependent\Windows\Debug\OSDependent.lib;$(VULKAN_SDK)\glslang\build\hlsl\Debug\HLSL.lib;$(VULKAN_SDK)\glslang\build\SPIRV\Debug\SPIRV.lib;$(SolutionDir)\lib\glfw3dll.lib</AdditionalDependencies>
-    </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
@@ -101,12 +93,10 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
       <AdditionalIncludeDirectories>$(SolutionDir)\utils;$(VULKAN_SDK)\Include;$(VULKAN_SDK)\glslang;$(VULKAN_SDK)\spirv-tools\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
-      <AdditionalDependencies>$(VULKAN_SDK)\glslang\build\glslang\Release\glslang.lib;$(VULKAN_SDK)\glslang\build\OGLCompilersDLL\Release\OGLCompiler.lib;$(VULKAN_SDK)\glslang\build\glslang\OSDependent\Windows\Release\OSDependent.lib;$(VULKAN_SDK)\glslang\build\hlsl\Release\HLSL.lib;$(VULKAN_SDK)\glslang\build\SPIRV\Release\SPIRV.lib;$(SolutionDir)\lib\glfw3dll.lib;$(VULKAN_SDK)\spirv-tools\build\source\Debug\SPIRV-Tools.lib;$(SolutionDir)\lib\glfw3.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -117,20 +107,14 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
       <AdditionalIncludeDirectories>$(SolutionDir)\utils;$(VULKAN_SDK)\Include;$(VULKAN_SDK)\glslang;$(VULKAN_SDK)\spirv-tools\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
-      <AdditionalDependencies>$(VULKAN_SDK)\glslang\build\glslang\Release\glslang.lib;$(VULKAN_SDK)\glslang\build\OGLCompilersDLL\Release\OGLCompiler.lib;$(VULKAN_SDK)\glslang\build\glslang\OSDependent\Windows\Release\OSDependent.lib;$(VULKAN_SDK)\glslang\build\hlsl\Release\HLSL.lib;$(VULKAN_SDK)\glslang\build\SPIRV\Release\SPIRV.lib;$(SolutionDir)\lib\glfw3dll.lib;$(SolutionDir)\lib\glfw3.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="demo.cpp" />
-    <ClCompile Include="vkel.c" />
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="vkel.h" />
+    <ClCompile Include="playground.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

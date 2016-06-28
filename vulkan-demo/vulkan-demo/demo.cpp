@@ -3,7 +3,7 @@
 #include <random>
 #include <chrono>
 
-#include <vulkan/vulkan.h>
+#include "vkel.h"
 #include "vk_cpp.hpp"
 
 #include "SPIRV/GlslangToSpv.h"
@@ -13,7 +13,9 @@
 
 #define GLFW_DLL
 #define GLFW_INCLUDE_NONE
+#define GLFW_EXPOSE_NATIVE_WIN32
 #include <GLFW/glfw3.h>
+#include <GLFW/glfw3native.h>
 
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
@@ -48,9 +50,6 @@ bool quit;
 /*****************************************************************************
 * DEBUG
 *****************************************************************************/
-
-// Function pointers
-//PFN_vkCreateDebugReportCallbackEXT vkCreateDebugReportCallbackEXT;
 
 // Only execute actions of D_ in DEBUG mode
 // D_ for single line statements
@@ -111,6 +110,27 @@ struct vertex {
 /*****************************************************************************
 * SHADERS
 ******************************************************************************/
+
+std::string triangleVertShaderText =
+R"vertexShader(
+#version 400
+ 
+void main() {
+    vec2 pos[3] = vec2[3]( vec2(-0.7, 0.7), vec2(0.7, 0.7), vec2(0.0, -0.7) );
+    gl_Position = vec4( pos[gl_VertexIndex], 0.0, 1.0 );
+}
+)vertexShader";
+
+std::string solidFragShaderText =
+R"fragmentShader(
+#version 400
+
+layout(location = 0) out vec4 out_Color;
+
+void main() {
+	out_Color = vec4( 0.0, 0.4, 1.0, 1.0 );
+}
+)fragmentShader";
 
 std::string simpleVertShaderText =
 R"vertexShader(
@@ -207,7 +227,7 @@ layout(binding = 4) uniform sampler2D aoMap;
 layout(binding = 5) uniform sampler2D leatherSpecularMap;
 layout(binding = 6) uniform sampler2D leatherMap;
 
-layout(std430, push_constant) uniform PushConstants
+layout(push_constant) uniform PushConstants
 {
 	vec3 lightColor;
 	vec3 cameraPos;
@@ -493,6 +513,35 @@ typename std::vector<unsigned int, Allocator> GLSLtoSPV(const vk::ShaderStageFla
 * HELPER FUNCTIONS
 *****************************************************************************/
 
+inline vk::AccessFlags LayoutFlags(vk::ImageLayout layout)
+{
+	switch (layout)
+	{
+	case vk::ImageLayout::eUndefined:
+		return vk::AccessFlags();
+	case vk::ImageLayout::eGeneral:
+		return vk::AccessFlags();
+	case vk::ImageLayout::eColorAttachmentOptimal:
+		return vk::AccessFlagBits::eColorAttachmentWrite;
+	case vk::ImageLayout::eDepthStencilAttachmentOptimal:
+		return vk::AccessFlagBits::eDepthStencilAttachmentRead | vk::AccessFlagBits::eDepthStencilAttachmentWrite;
+	case vk::ImageLayout::eDepthStencilReadOnlyOptimal:
+		return vk::AccessFlagBits::eDepthStencilAttachmentRead;
+	case vk::ImageLayout::eShaderReadOnlyOptimal:
+		return vk::AccessFlagBits::eShaderRead;
+	case vk::ImageLayout::eTransferSrcOptimal:
+		return vk::AccessFlagBits::eTransferRead;
+	case vk::ImageLayout::eTransferDstOptimal:
+		return vk::AccessFlagBits::eTransferWrite;
+	case vk::ImageLayout::ePreinitialized:
+		return vk::AccessFlagBits::eHostWrite;
+	case vk::ImageLayout::ePresentSrcKHR:
+		return vk::AccessFlags();
+	default: // This is not a valid image layout
+		exit(-1);
+	}
+}
+
 // GLFW Window Close Callback
 void winclose_callback(GLFWwindow* window)
 {
@@ -501,6 +550,8 @@ void winclose_callback(GLFWwindow* window)
 }
 
 GLFWwindow* init_glfw() {
+	vkelInit();
+
 	// Initialize GLFW
 	if (glfwInit() == GLFW_FALSE) {
 		fprintf(stderr, "ERROR: GLFW failed to initialize.\n");
@@ -547,8 +598,8 @@ void create_callbacks(const vk::Instance& instance) {
 	VkDebugReportCallbackEXT callback;
 	//TODO: See if this can be wrapped in VKCPP again, if not do error checking
 	VkResult result = vkCreateDebugReportCallbackEXT(instance, &(VkDebugReportCallbackCreateInfoEXT)callbackCreateInfo, nullptr, &callback);
-	callbacks.push_back(callback);
 	//instance.createDebugReportCallbackEXT(callbackCreateInfo);
+	callbacks.push_back(callback);
 }
 
 vk::Instance create_instance() {
@@ -628,6 +679,7 @@ vk::Device create_device(const vk::PhysicalDevice& physical_device, const std::v
 
 	std::vector<const char*> enabledDeviceExtensions;
 	enabledDeviceExtensions.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
+	enabledDeviceExtensions.push_back(VK_NV_GLSL_SHADER_EXTENSION_NAME);
 	//D_(enabledDeviceExtensions.push_back("VK_EXT_DEBUG_MARKER_EXTENSION_NAME"));
 
 	vk::PhysicalDeviceFeatures enabledDeviceFeatures;
@@ -1369,8 +1421,8 @@ void create_samplers_cpu_mipmaps(
 			);
 
 			vk::ImageMemoryBarrier texture_transition_barrier(
-				vk::AccessFlags(vk::AccessFlagBits::eHostWrite),
-				vk::AccessFlags(vk::AccessFlagBits::eTransferWrite),
+				LayoutFlags(vk::ImageLayout::ePreinitialized),
+				LayoutFlags(vk::ImageLayout::eTransferDstOptimal),
 				vk::ImageLayout::ePreinitialized,
 				vk::ImageLayout::eTransferDstOptimal,
 				VK_QUEUE_FAMILY_IGNORED,
@@ -1398,8 +1450,8 @@ void create_samplers_cpu_mipmaps(
 
 			// Convert texture_image layout to shader optimal
 			vk::ImageMemoryBarrier texture_shader_barrier(
-				vk::AccessFlags(vk::AccessFlagBits::eTransferWrite),
-				vk::AccessFlags(vk::AccessFlagBits::eShaderRead),
+				LayoutFlags(vk::ImageLayout::eTransferDstOptimal),
+				LayoutFlags(vk::ImageLayout::eShaderReadOnlyOptimal),
 				vk::ImageLayout::eTransferDstOptimal,
 				vk::ImageLayout::eShaderReadOnlyOptimal,
 				VK_QUEUE_FAMILY_IGNORED,
@@ -1792,8 +1844,8 @@ void create_samplers_blit_mipmaps(
 			);
 
 			vk::ImageMemoryBarrier staging_transition_barrier(
-				vk::AccessFlags(vk::AccessFlagBits::eHostWrite),
-				vk::AccessFlags(vk::AccessFlagBits::eTransferRead),
+				LayoutFlags(vk::ImageLayout::ePreinitialized),
+				LayoutFlags(vk::ImageLayout::eTransferSrcOptimal),
 				vk::ImageLayout::ePreinitialized,
 				vk::ImageLayout::eTransferSrcOptimal,
 				VK_QUEUE_FAMILY_IGNORED,
@@ -1821,8 +1873,8 @@ void create_samplers_blit_mipmaps(
 			);
 
 			vk::ImageMemoryBarrier texture_transition_barrier(
-				vk::AccessFlags(vk::AccessFlagBits::eHostWrite),
-				vk::AccessFlags(vk::AccessFlagBits::eTransferWrite),
+				LayoutFlags(vk::ImageLayout::ePreinitialized),
+				LayoutFlags(vk::ImageLayout::eTransferDstOptimal),
 				vk::ImageLayout::ePreinitialized,
 				vk::ImageLayout::eTransferDstOptimal,
 				VK_QUEUE_FAMILY_IGNORED,
@@ -1862,8 +1914,8 @@ void create_samplers_blit_mipmaps(
 
 			// Convert texture_image layout to shader optimal
 			vk::ImageMemoryBarrier texture_shader_barrier(
-				vk::AccessFlags(vk::AccessFlagBits::eTransferWrite),
-				vk::AccessFlags(vk::AccessFlagBits::eShaderRead),
+				LayoutFlags(vk::ImageLayout::eTransferDstOptimal),
+				LayoutFlags(vk::ImageLayout::eShaderReadOnlyOptimal),
 				vk::ImageLayout::eTransferDstOptimal,
 				vk::ImageLayout::eShaderReadOnlyOptimal,
 				VK_QUEUE_FAMILY_IGNORED,
@@ -2215,8 +2267,8 @@ void create_samplers_debug_mipmaps(
 			);
 
 			vk::ImageMemoryBarrier texture_transition_barrier(
-				vk::AccessFlags(vk::AccessFlagBits::eHostWrite),
-				vk::AccessFlags(vk::AccessFlagBits::eTransferWrite),
+				LayoutFlags(vk::ImageLayout::ePreinitialized),
+				LayoutFlags(vk::ImageLayout::eTransferDstOptimal),
 				vk::ImageLayout::ePreinitialized,
 				vk::ImageLayout::eTransferDstOptimal,
 				VK_QUEUE_FAMILY_IGNORED,
@@ -2244,8 +2296,8 @@ void create_samplers_debug_mipmaps(
 
 			// Convert texture_image layout to shader optimal
 			vk::ImageMemoryBarrier texture_shader_barrier(
-				vk::AccessFlags(vk::AccessFlagBits::eTransferWrite),
-				vk::AccessFlags(vk::AccessFlagBits::eShaderRead),
+				LayoutFlags(vk::ImageLayout::eTransferDstOptimal),
+				LayoutFlags(vk::ImageLayout::eShaderReadOnlyOptimal),
 				vk::ImageLayout::eTransferDstOptimal,
 				vk::ImageLayout::eShaderReadOnlyOptimal,
 				VK_QUEUE_FAMILY_IGNORED,
@@ -2817,11 +2869,13 @@ int main() {
 	texture_paths.push_back("../meshes/couch/T_Leather_D.TGA");
 
 	// Shaders
+	std::string vertShaderText = triangleVertShaderText;
+	std::string fragShaderText = solidFragShaderText;
 	//std::string vertShaderText = simpleVertShaderText;
 	//std::string fragShaderText = simpleFragShaderText;
 	//std::string fragShaderText = lodFragShaderText;
-	std::string vertShaderText = couchVertShaderText;
-	std::string fragShaderText = couchFragShaderText;
+	//std::string vertShaderText = couchVertShaderText;
+	//std::string fragShaderText = couchFragShaderText;
 
 	// Initialize GLFW
 	GLFWwindow* window = init_glfw();
@@ -2851,25 +2905,33 @@ int main() {
 	// Create Logical Device
 	vk::Device device = create_device(physical_device, deviceQueueInfoVec);
 
-	// Query for Vulkan presentation support
-	VkPhysicalDevice native_physicalDevice = physical_device;
-	if (glfwGetPhysicalDevicePresentationSupport(instance, native_physicalDevice, 0) == GLFW_FALSE) {
-		fprintf(stderr, "ERROR: Selected queue does not support image presentation.\n");
-		system("pause");
-		exit(-1);
-	}
+	HWND windowHandle = glfwGetWin32Window(window);
 
-	// Create Vulkan surface
-	VkInstance native_instance = instance;
-	VkSurfaceKHR native_surface;
-	VkResult native_res = glfwCreateWindowSurface(native_instance, window, nullptr, &native_surface);
-	if (native_res) {
-		fprintf(stderr, "ERROR: Window surface creation failed.\n");
-		system("pause");
-		exit(-1);
-	}
+	vk::Win32SurfaceCreateInfoKHR surfaceCreateInfo = vk::Win32SurfaceCreateInfoKHR()
+		.setHwnd(windowHandle)
+		.setHinstance(GetModuleHandle(0));
 
-	vk::SurfaceKHR surface = native_surface;
+	vk::SurfaceKHR surface = instance.createWin32SurfaceKHR(surfaceCreateInfo);
+
+	//// Query for Vulkan presentation support
+	//VkPhysicalDevice native_physicalDevice = physical_device;
+	//if (glfwGetPhysicalDevicePresentationSupport(instance, native_physicalDevice, 0) == GLFW_FALSE) {
+	//	fprintf(stderr, "ERROR: Selected queue does not support image presentation.\n");
+	//	system("pause");
+	//	exit(-1);
+	//}
+
+	//// Create Vulkan surface
+	//VkInstance native_instance = instance;
+	//VkSurfaceKHR native_surface;
+	//VkResult native_res = glfwCreateWindowSurface(native_instance, window, nullptr, &native_surface);
+	//if (native_res) {
+	//	fprintf(stderr, "ERROR: Window surface creation failed.\n");
+	//	system("pause");
+	//	exit(-1);
+	//}
+
+	//vk::SurfaceKHR surface = native_surface;
 
 	// Make validation layer happy, this is same check as glfwGetPhysicalDevicePresentationSupport
 	physical_device.getSurfaceSupportKHR(0, surface);
@@ -3215,13 +3277,13 @@ int main() {
 
 	vk::ShaderModuleCreateInfo vert_shader_module_create_info(
 		vk::ShaderModuleCreateFlags(),
-		vertShaderSPV.size() * sizeof(unsigned int),
+		vertShaderSPV.size() * sizeof(vertShaderSPV.front()),
 		reinterpret_cast<const uint32_t*>(vertShaderSPV.data())
 	);
 
 	vk::ShaderModuleCreateInfo frag_shader_module_create_info(
 		vk::ShaderModuleCreateFlags(),
-		fragShaderSPV.size() * sizeof(unsigned int),
+		fragShaderSPV.size() * sizeof(fragShaderSPV.front()),
 		reinterpret_cast<const uint32_t*>(fragShaderSPV.data())
 	);
 
@@ -3855,9 +3917,8 @@ int main() {
 		);
 
 		vk::ImageMemoryBarrier layout_transition_barrier(
-			vk::AccessFlags(),
-			vk::AccessFlags(vk::AccessFlagBits::eDepthStencilAttachmentRead |
-				vk::AccessFlagBits::eDepthStencilAttachmentWrite),
+			LayoutFlags(vk::ImageLayout::eUndefined),
+			LayoutFlags(vk::ImageLayout::eDepthStencilAttachmentOptimal),
 			vk::ImageLayout::eUndefined,
 			vk::ImageLayout::eDepthStencilAttachmentOptimal,
 			VK_QUEUE_FAMILY_IGNORED,
@@ -3891,7 +3952,7 @@ int main() {
 		vk::SubmitInfo setup_submit_info(
 			0,
 			nullptr,
-			&setup_wait_dst_stage_mask,
+			nullptr,
 			1,
 			&setup_command_buffer,
 			0,
@@ -3908,61 +3969,6 @@ int main() {
 		setup_command_buffer.reset(vk::CommandBufferResetFlags());
 	} while (0);
 
-	// Convert Images from Undefined to PresentSrcKHR
-	for (int k = 0; k < images.size(); k++) {
-		vk::ImageMemoryBarrier layout_transition_barrier(
-			vk::AccessFlags(),
-			vk::AccessFlags(),
-			vk::ImageLayout::eUndefined,
-			vk::ImageLayout::ePresentSrcKHR,
-			0,
-			0,
-			images.at(k),
-			image_subresource_range
-		);
-
-		setup_command_buffer.begin(setup_cmd_buffer_begin_info); // Start recording
-		{
-			setup_command_buffer.pipelineBarrier(
-				vk::PipelineStageFlags(vk::PipelineStageFlagBits::eTransfer),
-				vk::PipelineStageFlags(vk::PipelineStageFlagBits::eTransfer),
-				vk::DependencyFlags(),
-				0,
-				0,
-				layout_transition_barrier
-			);
-		}
-		try {
-			setup_command_buffer.end(); // Stop recording
-		}
-		catch (const std::system_error& e) {
-			fprintf(stderr, "Vulkan failure: %s\n", e.what());
-			system("pause");
-			exit(-1);
-		}
-
-		vk::PipelineStageFlags setup_wait_dst_stage_mask = vk::PipelineStageFlags(vk::PipelineStageFlagBits::eColorAttachmentOutput);
-
-		vk::SubmitInfo setup_submit_info(
-			0,
-			nullptr,
-			&setup_wait_dst_stage_mask,
-			1,
-			&setup_command_buffer,
-			0,
-			nullptr
-		);
-
-		vk::FenceCreateInfo setup_fence_create_info;
-
-		vk::Fence setup_fence = device.createFence(setup_fence_create_info);
-		present_queue.submit(setup_submit_info, setup_fence);
-
-		device.waitForFences(setup_fence, VK_TRUE, UINT64_MAX);
-		device.resetFences(setup_fence);
-		setup_command_buffer.reset(vk::CommandBufferResetFlags());
-	}
-
 	// Command Buffer Begin Info
 	vk::CommandBufferBeginInfo cmd_buffer_begin_info(
 		vk::CommandBufferUsageFlags(),
@@ -3972,9 +3978,9 @@ int main() {
 	// Record Command Buffer
 	for (int k = 0; k < images.size(); k++) {
 		vk::ImageMemoryBarrier barrier_from_present_to_clear(
-			vk::AccessFlags(),
-			vk::AccessFlags(vk::AccessFlagBits::eColorAttachmentWrite),
-			vk::ImageLayout::ePresentSrcKHR,
+			LayoutFlags(vk::ImageLayout::eUndefined),
+			LayoutFlags(vk::ImageLayout::eColorAttachmentOptimal),
+			vk::ImageLayout::eUndefined,
 			vk::ImageLayout::eColorAttachmentOptimal,
 			0,
 			0,
@@ -3983,8 +3989,8 @@ int main() {
 		);
 
 		vk::ImageMemoryBarrier barrier_from_clear_to_present(
-			vk::AccessFlags(vk::AccessFlagBits::eColorAttachmentWrite),
-			vk::AccessFlags(),
+			LayoutFlags(vk::ImageLayout::eColorAttachmentOptimal),
+			LayoutFlags(vk::ImageLayout::ePresentSrcKHR),
 			vk::ImageLayout::eColorAttachmentOptimal,
 			vk::ImageLayout::ePresentSrcKHR,
 			0,
@@ -3999,8 +4005,8 @@ int main() {
 				vk::PipelineStageFlags(vk::PipelineStageFlagBits::eTransfer),
 				vk::PipelineStageFlags(vk::PipelineStageFlagBits::eTransfer),
 				vk::DependencyFlags(),
-				0,
-				0,
+				nullptr,
+				nullptr,
 				barrier_from_present_to_clear
 			);
 
